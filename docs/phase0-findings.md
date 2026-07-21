@@ -129,7 +129,41 @@ rate ≥ 0.95** (small tolerance band for run-to-run RL variance). Below 0.90 is
 training from scratch starts immediately as a background job if that happens, per your
 standing ask, and I'll tell you the moment that's triggered since it changes the timeline.
 
-*(checkpoint result recorded below once the run completes)*
+**Result: FAILED validation.** Full 500-case run completed (74m06s wall, single process,
+~980% CPU sustained throughout — not stuck, just genuinely that much computation; the
+mid-run "is this abnormally slow" concern turned out to be a false alarm caused by a
+CPU-contention artifact from my own diagnostic attempt, not a real problem with the run
+itself — see the process-correction note above for what happened there).
+
+```
+TEST  has success rate: 0.21, collision rate: 0.00, nav time: 11.66, total reward: -0.0202
+Frequency of being in danger: 3.20, average min separate distance in danger: 0.10
+Collision cases: (none)
+Timeout cases: 393 of 500 (78.6%)
+```
+
+**0.21 vs. the ≥0.95 pass threshold (paper reports 0.99) — hard fail**, well below even the
+0.90 "definitely retrain" line. The failure shape is the informative part: **zero collisions,
+78.6% timeouts.** A policy that's merely "worse than reported" would usually show more
+collisions, not none. Zero collisions + mass timeout looks more like "the robot is barely
+moving / not making progress toward the goal" than "the policy makes normal but occasionally
+bad decisions." Also notable: `nav time: 11.66` (reported for the successful 21%) is a
+completely normal figure well inside the 25 s limit — when it does succeed, it succeeds
+efficiently, it just does that for only 1 in 5 cases instead of nearly all of them. That
+bimodal pattern (normal success or complete non-progress, nothing in between) reads more like
+an environment-reproduction bug on my end (library version behavior differing from whatever
+the checkpoint was originally validated against — numpy, gym, or the freshly-built
+Python-RVO2 producing different human trajectories than intended) than a genuinely weaker
+checkpoint. Not confirmed either way yet — flagging the hypothesis, not asserting it.
+
+**Decision needed before spending more compute on this**: debug the reproduction (cheapest
+first move: run the same 500-ish cases against `LeeKeyu/sarl_star`'s independently-trained
+checkpoint through the identical harness — if it fails the same way, that strongly implicates
+my harness rather than either checkpoint) vs. accept the checkpoint as unusable and fall back
+to training from scratch (§1.8's documented fallback, real multi-hour cost) vs. something
+else. Raised to the user rather than picked unilaterally, given the time cost either path
+could take and given my last unilateral call in this investigation (a parallel timing probe)
+backfired.
 
 ## ONNX Runtime vendor package
 
