@@ -1,5 +1,5 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.1 (2026-07-21)
+## Implementation Plan v1.3 (2026-07-21, updated 2026-07-22)
 
 No code has been written yet. This document is the deliverable for this pass. It is meant to
 be read once in full, then used as a checklist during the phased build.
@@ -18,6 +18,21 @@ weights at all — training from scratch would have been a real, unbudgeted mult
 but found a fork with a matching-config pretrained SARL checkpoint, so Phase 0/8 now target
 loading and validating that checkpoint, with from-scratch training demoted to a documented
 fallback (§1.8, §3 Phase 0/8, §5, §7).
+
+**v1.3 changes** (Phase 0 execution, 2026-07-21/22): full findings in
+`docs/phase0-findings.md`, committed incrementally. Headline items that change this plan:
+the checkpoint was trained with **holonomic kinematics, not unicycle** as §7 had assumed —
+`SarlAdapter` needs an explicit holonomic→unicycle command conversion for our diff-drive
+robot, not just accel clamping (§1.4, §1.9 new). World-scale risk (§1.1) is **downgraded**:
+aisle widths measured directly from the SDF (~2.58 m row spacing, ~13× our robot's width,
+confirming the mismatch with real numbers), RTF measured at ~1.0, and the depot's collision
+layer turns out to be pure primitives (no mesh) — the gz-sim mesh-scale bug class doesn't
+apply to it at all, so rescaling is deterministic arithmetic, not a real risk. Found a new,
+real risk not in the original list: headless rendering hangs on this machine without
+Xvfb/EGL, which will hit Phase 1's LiDAR sensor too (§1.10 new). ONNX Runtime version bumped
+1.17.3 → 1.20.1 after the vendor package's own plumbing test caught a real IR-version
+incompatibility (§1.3). `gz_ros2_control` needs `sudo apt install` and this machine has no
+passwordless sudo — blocked, needs you (§3 Phase 0).
 
 ---
 
@@ -101,8 +116,31 @@ does partly evaporate, exactly as you suspected.
    the in-distribution control condition per §5.8 of the brief — this one has no scale
    ambiguity since it's just an empty circle.
 
-I'll report actual RTF and aisle-width numbers back to you at the end of Phase 0 before
-committing further phases to a specific world.
+**Phase 0 results (measured, not estimated — full detail in `docs/phase0-findings.md`):**
+RTF ≈ 0.996–1.0, physics-only, sampled directly off the live `/stats` topic. Aisle widths
+pulled straight from the SDF: three parallel shelf-pole rows at 2.58 m center-to-center
+spacing (~2.52 m clear) — **≈13× our robot's 190 mm width**, vs. ≈4.2× for Tugbot's actual
+598 mm width. Confirms the mismatch with real numbers instead of the footprint-based estimate
+above.
+
+Better news than expected on the rescale mechanism: the depot's *collision* layer
+(`depot_collision`) turns out to be a single hand-authored model built entirely from
+primitive `<box>`/`<cylinder>` shapes with literal pose/size numbers — no mesh collision at
+all. The gz-sim mesh-scale bugs cited above (gz-sim#2656, ros_gz#587) are specific to `<mesh>`
+geometry and **don't apply here** — rescaling is just multiplying already-known numbers by
+0.27, not exercising any flaky engine code path. The only mesh in the world is a separate
+`<include>` of `OpenRobotics/models/Depot` for the *visual* appearance at the same pose; if
+scaling that glitches, it's cosmetic only (collision, costmap, AMCL, and every eval metric key
+off `depot_collision`, not the visual mesh) and has a cheap fallback (synthesize simple
+box/cylinder visuals matching the already-extracted primitive dimensions). **Net effect: this
+risk is downgraded** from "verify carefully, may need the custom-world fallback" to "known-safe
+arithmetic rescale, cosmetic-only residual risk." tugbot_depot at native scale remains the
+SLAM/AMCL/visual demo world; the 0.27×-rescaled `depot_collision` becomes the structured-depot
+evaluation world (not yet built — that's Phase 1/2 world-authoring work).
+
+Side finding, independent of scale: the shelf collision is only 3 cm-radius corner posts, not
+full shelf footprints — worth knowing before assuming the depot is collision-realistic at any
+scale, though it doesn't change the scale conclusion.
 
 ### 1.2 Pedestrian simulation: HuNav vs custom
 
@@ -136,6 +174,21 @@ parameters, sub-millisecond to low-single-digit-millisecond inference on CPU. No
 packaging surface. Agree with your instinct to prefer ONNX Runtime over LibTorch: LibTorch's
 binary footprint and ABI fragility inside an ament/colcon workspace is a materially bigger
 packaging risk for no benefit here.
+
+**Phase 0 result**: built this package for real and it works — `colcon build
+--packages-select crowd_nav_onnxruntime_vendor` succeeds, and a real inference plumbing test
+(not just a compile check: loads a `Linear(4,1)` ONNX model with known weights, runs it, checks
+the output against the known-correct answer) passes. Caught one real bug in the process: the
+originally-pinned **1.17.3 rejects models with ONNX IR version 10** outright (a hard crash,
+`Ort::Exception`, not a warning) — and this machine's PyTorch (2.13, current dynamo-based
+exporter) produces IR version 10 by default on the very first model exported. **Bumped the
+pinned version to 1.20.1** (IR v10 support landed in ONNX Runtime 1.19). Also: the originally
+sketched `crowd_nav_onnxruntime_vendor::onnxruntime` namespaced target doesn't work for a
+vendored prebuilt `.so` (`install(TARGETS ...)` requires a real build target, not a CMake
+`IMPORTED` one) — downstream packages consume this via the older
+`ament_export_include_directories()`/`ament_export_libraries()` pattern instead (works,
+verified). See §4.3 — this doesn't change the `PolicyAdapter` interface, only how
+`crowd_nav_policy_adapters`'/`crowd_nav_controller`'s `CMakeLists.txt` link against it.
 
 ### 1.4 CrowdNav / SARL export — the architecture surprise
 
@@ -223,6 +276,51 @@ cleanly on a current PyTorch, and reproduces a reasonable success rate using Cro
 reported numbers) does training-from-scratch become a real phase — and if it does, it runs as
 a background job from day one of Phase 0 (it has zero dependency on ROS/Gazebo/ONNX, so it
 doesn't block anything else) rather than being discovered as a blocker at Phase 8.
+
+**Phase 0 result**: while setting up validation, pulled the checkpoint's actual
+`policy.config` alongside its `env.config` — `[action_space] kinematics = holonomic`. This
+checkpoint was trained assuming the robot can move in any direction instantly, not a
+differential-drive unicycle. See §1.9 — this is a real, separate finding from the
+env.config parameters already used in §4.4, and changes what `SarlAdapter` has to do beyond
+candidate-action search.
+
+### 1.9 Holonomic-trained policy, nonholonomic robot — a real gap, not just accel clamping
+
+The brief's §5.5 already flags "handle nonholonomic constraints... clamp to the robot's
+configured limits," which reads as an acceleration-limit problem. Phase 0 surfaced something
+more specific: the actual checkpoint we're using (§1.8) was trained with
+`kinematics = holonomic` (confirmed in its shipped `policy.config`), meaning SARL's
+one-step action propagation and its resulting `(vx, vy)` command assume the agent can move in
+any direction instantly, independent of current heading. Our robot is a differential-drive
+unicycle — it cannot execute an arbitrary `(vx, vy)` directly; it can only command
+`(v, ω)` (forward speed, turn rate).
+
+This needs an explicit conversion step, not just clamping. Standard approach (used by other
+real-robot SARL deployments, e.g. `sarl_star`): treat the network's holonomic `(vx, vy)`
+output as a desired heading + speed, and derive `(v, ω)` by turning toward that heading while
+moving forward at (up to) the commanded speed — `ω` proportional to heading error, `v` the
+commanded speed scaled down as heading error grows (don't drive fast while turning
+sharply). This conversion lives in `SarlAdapter::selectAction` (policy-family-specific, per
+§4.3), not in the generic controller plugin or the accel-clamp step, which still separately
+clamps whatever `(v, ω)` comes out of this conversion to the robot's physical limits.
+Documented here now so Phase 8 doesn't rediscover it as a surprise.
+
+### 1.10 Headless rendering hangs on this machine — relevant beyond Phase 0
+
+Found while measuring RTF: running `tugbot_depot` server-only (`ign gazebo -s -r`) with
+Tugbot's stock camera/depth sensors enabled hangs indefinitely with no console output (a 45 s
+run had to be killed). Stripping the `Sensors`/`Imu` system plugins fixed it immediately —
+clean startup, runs to completion, RTF ≈ 1.0. Root cause: no Xvfb/EGL headless-rendering setup
+on this machine, and the `Sensors` system's ogre2 backend blocks trying to acquire a GL
+context. This is bigger than a Phase 0 RTF-measurement inconvenience: our own robot's 2D
+LiDAR (§3 of the brief) is very likely implemented as a `gpu_lidar` sensor type in
+gz-sim, which goes through this same rendering system. **Phase 1 will hit this identical hang
+the moment the LiDAR sensor is added**, unless fixed first. Fallback options, cheapest first:
+(1) install `Xvfb` and run under a virtual display; (2) confirm/force Mesa software
+rendering (`LIBGL_ALWAYS_SOFTWARE=1`) works headless for ogre2; (3) if neither works cleanly,
+use a CPU raycast-based lidar sensor type instead of `gpu_lidar` (slower, but doesn't touch the
+rendering system at all — acceptable given our LiDAR spec is already deliberately modest, §3).
+Flagging this now, before Phase 1, rather than letting it surface as a mystery hang later.
 
 ---
 
@@ -615,10 +713,13 @@ of them.
 
 ## 7. Assumptions log (things I decided rather than asked, per your standing instruction)
 
-- ONNX Runtime version pinned to 1.17.x (CPU-only Linux x64 prebuilt) — mature, broad opset
-  coverage, well within Humble's support window.
+- ONNX Runtime version pinned to **1.20.1** (CPU-only Linux x64 prebuilt) — revised from the
+  original 1.17.3 plan after Phase 0 found 1.17.3 hard-rejects the ONNX IR version this
+  machine's PyTorch actually produces. See §1.3.
 - SARL action-space discretization defaults to the original paper's config (5 speeds × 16
-  headings + 1 stop, unicycle kinematics mode) unless Phase 8 testing suggests otherwise.
+  headings + 1 stop). **Kinematics mode is holonomic**, confirmed from the checkpoint's own
+  `policy.config` (§1.8/§1.9) — corrected from this plan's original "unicycle" assumption.
+  `SarlAdapter` converts the holonomic output to `(v, ω)` for our diff-drive robot; see §1.9.
 - `policy_radius` (fed to the network) defaults to CrowdNav's training value, 0.3 m;
   `robot_radius` (used for actual collision/costmap/supervisor geometry) comes from the URDF —
   see §4.3.
