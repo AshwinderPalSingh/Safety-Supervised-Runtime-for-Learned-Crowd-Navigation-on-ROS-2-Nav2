@@ -156,14 +156,45 @@ the checkpoint was originally validated against — numpy, gym, or the freshly-b
 Python-RVO2 producing different human trajectories than intended) than a genuinely weaker
 checkpoint. Not confirmed either way yet — flagging the hypothesis, not asserting it.
 
-**Decision needed before spending more compute on this**: debug the reproduction (cheapest
-first move: run the same 500-ish cases against `LeeKeyu/sarl_star`'s independently-trained
-checkpoint through the identical harness — if it fails the same way, that strongly implicates
-my harness rather than either checkpoint) vs. accept the checkpoint as unusable and fall back
-to training from scratch (§1.8's documented fallback, real multi-hour cost) vs. something
-else. Raised to the user rather than picked unilaterally, given the time cost either path
-could take and given my last unilateral call in this investigation (a parallel timing probe)
-backfired.
+**Root cause found — three cheap (n=50) differential runs, not the expensive full-500 retest:**
+
+| Checkpoint | Config | Success | Collision | Timeout |
+|---|---|---|---|---|
+| tkkim `rl_model.pth` | holonomic, w/ global state | 0.12 | 0.00 | 0.88 |
+| `LeeKeyu/sarl_star`'s `rl_model.pth` (patched `env.config` — see below) | unicycle, w/o global state | 0.72 | 0.18 | 0.10 |
+| tkkim `il_model.pth` (same repo, pre-RL) | holonomic, w/ global state (identical arch) | 0.96 | 0.02 | 0.02 |
+
+Conclusions, in order of confidence:
+1. **The harness is fine.** Two independent checkpoints (LeeKeyu's, and tkkim's own IL model)
+   produce normal-looking navigation behavior through the exact same environment code, same
+   rebuilt Python-RVO2, same numpy/gym versions. Rules out a systemic reproduction bug.
+2. **The holonomic + with-global-state architecture is fine.** The IL checkpoint uses the
+   identical architecture and gets 0.96 — architecture isn't the problem either.
+3. **The problem is specifically tkkim-robot's `rl_model.pth`** — the RL fine-tuning stage
+   checkpoint. Its failure signature (0% collision, 88% timeout) looks like a degenerate
+   "won't commit to moving" policy, consistent with an undertrained or interrupted RL run
+   (tkkim's own `data_cadrl/` folder has numbered progressive checkpoints
+   `rl_model_1000.pth` … `rl_model_10000.pth`, suggesting these are training snapshots;
+   `data_sarl/` only ships a single unnumbered `rl_model.pth`, with no way to confirm it's
+   the fully-converged final one).
+
+Side note on the LeeKeyu run: its `env.config` was missing `start_x`/`start_y`/`goal_x`/
+`goal_y`/`theta` (`crowd_sim.py` reads these unconditionally to place the robot, regardless
+of `test_sim` mode — an older config-schema version). Patched with tkkim's same standard
+circle-crossing values (`(0,-4)→(0,4)`, `theta=1.57`) before running; noting this because it's
+a real config-schema evolution worth knowing about if any other pre-2020-era CrowdNav configs
+turn up later.
+
+**Decision point, raised to the user rather than picked unilaterally:** given tkkim's
+`rl_model.pth` is now reasonably confirmed bad (not a harness artifact), how to get a usable
+SARL checkpoint. Options: (a) use tkkim's own `il_model.pth` directly — already validated at
+0.96, zero more compute, but it's pure imitation of ORCA, arguably undercutting the point of
+using an RL-refined policy; (b) resume RL fine-tuning from that same IL checkpoint (cheaper
+than training from scratch since the IL phase is already done, but still a real multi-hour
+background job); (c) adopt `LeeKeyu/sarl_star`'s checkpoint instead — genuinely RL-trained,
+0.72/0.18/0.10, and **unicycle kinematics**, which would eliminate the holonomic→unicycle
+conversion problem in §1.9 entirely; (d) look for still another checkpoint source before
+committing compute.
 
 ## ONNX Runtime vendor package
 
