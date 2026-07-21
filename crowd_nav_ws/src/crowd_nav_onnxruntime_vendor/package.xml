@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypeins="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>crowd_nav_onnxruntime_vendor</name>
+  <version>0.1.0</version>
+  <description>
+    Vendors a prebuilt ONNX Runtime (CPU) release as a CMake imported target, so
+    downstream packages can `find_package(crowd_nav_onnxruntime_vendor)` without relying
+    on an external vendor package's build-tool compatibility with this ROS distro.
+  </description>
+  <maintainer email="ashwinder4377@gmail.com">ashwinder</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

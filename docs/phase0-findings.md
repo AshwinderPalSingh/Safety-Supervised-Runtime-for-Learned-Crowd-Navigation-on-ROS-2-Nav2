@@ -90,3 +90,38 @@ training from scratch starts immediately as a background job if that happens, pe
 standing ask, and I'll tell you the moment that's triggered since it changes the timeline.
 
 *(checkpoint result recorded below once the run completes)*
+
+## ONNX Runtime vendor package
+
+Built `crowd_nav_onnxruntime_vendor` (`crowd_nav_ws/src/crowd_nav_onnxruntime_vendor/`):
+CMake `file(DOWNLOAD)` + `file(ARCHIVE_EXTRACT)` of the official prebuilt Linux x64 CPU
+release, no external vendor-package dependency, exactly as planned in §1.3. `colcon build
+--packages-select crowd_nav_onnxruntime_vendor` succeeds. Added a real plumbing test
+(`test_onnxruntime_link`, not just a compile check): loads a hand-exported trivial ONNX model
+(`Linear(4,1)`, weight=1 bias=0, so output = sum of inputs — a known-answer check) and runs
+inference through the vendored runtime. **Result: 10.0 for input [1,2,3,4], as expected. PASS.**
+
+**Real bug caught in the process, not hypothetical**: originally pinned ONNX Runtime 1.17.3
+(matches what IMPLEMENTATION_PLAN.md §1.3 says — "mature, well within Humble's window"). The
+trivial model, exported with this machine's PyTorch (2.13, current dynamo-based exporter),
+carries **ONNX IR version 10**. ONNX Runtime 1.17.3 hard-rejects it at load: *"Unsupported
+model IR version: 10, max supported IR version: 9"* — a crash (`Ort::Exception`, SIGABRT), not
+a warning. **Bumped the vendored version to 1.20.1** (confirmed via ONNX Runtime's own
+compatibility docs: IR version 10 support landed in 1.19). Retested — passes cleanly.
+
+This is exactly the kind of version-skew problem the Phase 0 SARL export spike exists to catch
+before it surfaces during Phase 8 with a much more complex model — recorded here since it
+already surfaced, on the *first* model exported on this machine. **Action for Phase 8**: when
+exporting SARL's real value network, confirm the exporter's emitted IR version against
+whatever ONNX Runtime version is pinned at that time — don't assume 1.20.1 stays sufficient if
+the pinned PyTorch version changes between now and then.
+
+Also note for later phases: `ament_export_targets`/`install(TARGETS ... EXPORT ...)` does not
+work for CMake `IMPORTED` libraries (tried it first, fails: *"install TARGETS given target
+'onnxruntime' which does not exist"* — imported targets aren't installable target artifacts).
+Downstream packages (`crowd_nav_policy_adapters`, `crowd_nav_controller`, from Phase 6 on)
+should consume this vendor package via the classic `ament_export_include_directories()` /
+`ament_export_libraries()` + `${crowd_nav_onnxruntime_vendor_INCLUDE_DIRS}` /
+`${crowd_nav_onnxruntime_vendor_LIBRARIES}` pattern, which is what's wired up now — not a
+modern namespaced `crowd_nav_onnxruntime_vendor::onnxruntime` target (that was the original
+design in IMPLEMENTATION_PLAN.md's sketch; doesn't work for a vendored prebuilt .so this way).
