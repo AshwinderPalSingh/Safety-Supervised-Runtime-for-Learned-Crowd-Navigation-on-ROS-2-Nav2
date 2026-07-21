@@ -79,6 +79,46 @@ tugbot_depot stays the native-scale SLAM/AMCL/visual demo world exactly as plann
 copy (not yet built — that's Phase 1/2 world-authoring work, out of scope for Phase 0) becomes
 the structured-depot evaluation world.
 
+## Process correction: environment isolation
+
+Initially installed the first few CrowdNav Python dependencies (torch, gym, cython, and an
+upgrade of setuptools/packaging to fix an unrelated metadata bug) via `pip install --user`
+directly into the shared user site-packages, before switching to an isolated `virtualenv`
+(the stdlib `venv` module needs `python3.10-venv`, which needs sudo — same blocker as
+gz_ros2_control below, so used the pure-Python `virtualenv` package instead, no sudo needed).
+That initial `--user` install touched `setuptools`/`packaging` versions in the same
+site-packages `colcon` uses. Checked immediately (`colcon version-check`, `colcon --help`) —
+both still worked — but flagging this plainly rather than treating "still works" as "no
+harm done": if anything colcon-related looks off later, this is the first place to look.
+Everything after that point ran inside `crowdnav_venv`, fully isolated.
+
+## gz_ros2_control diff-drive demo
+
+Needed two `sudo apt install` runs from you (no passwordless sudo on this machine, so I
+couldn't run them myself): `ros-humble-gz-ros2-control` then `ros-humble-gz-ros2-control-demos`.
+Both verified installed after you ran them (checked `apt list --installed` and the actual
+plugin `.so` on disk, not just trusting the report).
+
+The stock demo launch (`diff_drive_example.launch.py`) defaults to `-r -v 1 empty.sdf`
+(GUI client, no `-s`) — on this machine (no Xvfb/display, see the headless-rendering finding
+above) that would need a display. Copied the launch file to the scratchpad and added `-s`
+(server-only) to `gz_args`; everything else identical to the stock demo, no changes to the
+installed package. Ran it headless:
+
+- `GazeboSimROS2ControlPlugin` connects, loads the URDF, initializes/configures/activates
+  `GazeboSimSystem` hardware for `left_wheel_joint`/`right_wheel_joint` — clean, no errors
+  (one cosmetic KDL warning about root-link inertia, harmless).
+- `controller_manager` loads and activates both `joint_state_broadcaster` and
+  `diff_drive_base_controller` — clean.
+- **Confirmed actual motion, not just clean startup logs**: published
+  `{linear: {x: 0.5}}` to `/diff_drive_base_controller/cmd_vel_unstamped` for 4 s;
+  `/diff_drive_base_controller/odom` moved from `x≈0` to `x≈1.685 m` — consistent with the
+  config's `max_acceleration: 1.0 m/s²` ramp-up, not a fluke number.
+
+**Phase 0 done, cleanly, on the last remaining item.** `gz_ros2_control` is confirmed to work
+headlessly end-to-end on this machine, matching IMPLEMENTATION_PLAN.md §1.6 exactly. All
+background/demo processes killed and confirmed gone afterward.
+
 ## SARL checkpoint validation
 
 Pass/fail threshold, pinned before running anything (per your ask): the SARL paper (Chen et
