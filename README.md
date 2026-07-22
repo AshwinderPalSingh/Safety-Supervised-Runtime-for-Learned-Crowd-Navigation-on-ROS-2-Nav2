@@ -7,7 +7,23 @@ contribution is the software layer around the policy, not the policy itself. See
 `IMPLEMENTATION_PLAN.md` for the full design and phased build order, and `docs/` for the
 detailed findings log kept as each phase landed.
 
-**Status**: Phase 1 of 12 complete (robot digital twin, verified in Gazebo). See
+## Development setup
+
+This project uses **CycloneDDS**, not the ROS 2 default FastRTPS, after a real reliability
+issue in Phase 2 (`docs/phase2-findings.md`): FastRTPS's shared-memory transport left stale
+`/dev/shm` segments after ungraceful process kills, which degraded into Nav2 lifecycle
+hangs during heavy iterative testing. Before running anything in this workspace:
+
+```bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+```
+
+(already appended to `~/.bashrc` on the dev machine this was built on — new interactive
+shells pick it up automatically; only needed manually in non-interactive/scripted contexts).
+`scripts/check_dds_health.sh` and `scripts/ros2_teardown.sh` provide an automated dirty-state
+check and safe cleanup regardless of which RMW is active - see Phase 2 findings for both.
+
+**Status**: Phase 1 of 12 complete; Phase 2 (baseline Nav2 + AMCL + SLAM) in progress. See
 `IMPLEMENTATION_PLAN.md` §3 for the full phase list.
 
 ## Known limitations (stated deliberately, not discovered as accidents)
