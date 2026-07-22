@@ -39,18 +39,30 @@ diff_drive_base_controller:
     # SARL-family policies were trained around ~1 m/s human-scale motion. The physical
     # Nvis on its 8.4V pack will manage roughly 0.3 m/s - that's the hardware deviation,
     # documented in MEASUREMENTS.md, to switch to if/when physical deployment happens.
+    # Acceleration limits: see docs/phase2-findings.md for the full diagnostic trail. Root
+    # cause of an earlier tipping bug: the rear caster (nvis_3302ard.xacro) sat almost exactly
+    # where the robot's COM already was in x (chassis + wheels), so by torque balance it carried
+    # only ~2% of the robot's weight at rest - a hard stop/reversal on either axis could exceed
+    # that tiny margin, lift the caster, and tip the chassis if a differential command landed in
+    # that window. The REAL fix was structural (caster_mass raised 0.02->0.15 kg in
+    # nvis_3302ard.xacro, restoring a ~15% static load share); dropping acceleration to 0.2 on
+    # both axes was a temporary mitigation tried first and confirmed insufficient on its own (two
+    # tip episodes still occurred in a full sweep even at 0.2/0.2). With the structural fix in
+    # place, these are restored to a moderate (not fully original 1.5/3.0) middle ground -
+    # responsive enough for normal MPPI-driven navigation, still a bit gentler than the original
+    # values as a margin of safety.
     linear.x.has_velocity_limits: true
     linear.x.has_acceleration_limits: true
     linear.x.has_jerk_limits: false
     linear.x.max_velocity: 1.0
     linear.x.min_velocity: -0.3
-    linear.x.max_acceleration: 1.5
-    linear.x.min_acceleration: -1.5
+    linear.x.max_acceleration: 0.8
+    linear.x.min_acceleration: -0.8
 
     angular.z.has_velocity_limits: true
     angular.z.has_acceleration_limits: true
     angular.z.has_jerk_limits: false
     angular.z.max_velocity: 2.0
     angular.z.min_velocity: -2.0
-    angular.z.max_acceleration: 3.0
-    angular.z.min_acceleration: -3.0
+    angular.z.max_acceleration: 1.5
+    angular.z.min_acceleration: -1.5

@@ -464,28 +464,49 @@ CPU-raycast `lidar` sensor type (found completely non-functional on this install
 Phase 2 needs to either mask the known-bad sector in software or find an actual renderer-level
 fix before AMCL/costmap work can trust the full 360° scan.
 
-**Phase 2 — Baseline Nav2 (MPPI) + AMCL + SLAM toolbox — IN PROGRESS, done-bar not yet met**
+**Phase 2 — Baseline Nav2 (MPPI) + AMCL + SLAM toolbox — DONE, done-bar met**
 Stock Nav2 with `nav2_mppi_controller`, AMCL against a saved map, `slam_toolbox` online
 mapping as an alternate launch mode, on the scaled depot world Phase 0 planned and this phase
 built (`depot_scaled.sdf`, generated from Phase 0's extracted primitive geometry). This *is*
 the `baseline_mppi` eval config's runtime. **Agreed done-bar** (set explicitly before starting,
 per the process note this phase raised): five consecutive successful goals from different
 start poses, in both AMCL mode (saved map) and SLAM mode (online map), with no manual
-intervention. **Not yet met** — full diagnostic trail in `docs/phase2-findings.md`.
+intervention. **Met**, with independent ground-truth verification (not just odometry) that the
+robot was never physically compromised during either run — full diagnostic trail in
+`docs/phase2-findings.md`.
 
-Real progress made: the world, full Nav2 stack, and SLAM-built map all function; AMCL
-localizes and tracks accurately (confirmed to ~1.3 cm against odometry ground truth after
-driving); one full `NavigateToPose` goal succeeded end-to-end after fixing several real bugs
-(MPPI footprint config, a plugin-lookup-name convention that's inconsistent across Nav2
-packages, AMCL's `initial_pose` being in map frame not world frame, an undersized circular
-`robot_radius`, and an `xy_goal_tolerance` too tight for NavFn's short-distance planning
-behavior near a goal). What's still open: a "ghost obstacle" artifact discovered in the
-SLAM-built map (confirmed via direct costmap inspection, not assumed — real geometry doesn't
-exist where the costmap shows near-lethal cost), one unexplained navigation overshoot on the
-second goal of a chained test, and — separately — recurring Nav2 lifecycle-activation hangs
-that look like session-level DDS infrastructure fragility after many hours of continuous
-process churn, not a configuration bug. Stopped live debugging at that point rather than
-continue an open-ended chase; SLAM-mode testing wasn't reached this session.
+A first pass left three things open (a SLAM map "ghost obstacle", one unexplained navigation
+overshoot, and recurring session-level DDS/lifecycle hangs) and correctly stopped rather than
+paper over them. A follow-up session root-caused all three:
+
+- The ghost obstacle and the overshoot shared a root cause the prior session couldn't see from
+  odometry alone: the robot was **physically tipping over during driving** (confirmed via
+  Gazebo ground-truth pose queries showing ~33° pitch, not the 0° odometry implied). Traced to
+  four compounding bugs in `nvis_3302ard.xacro`/`diff_drive_controller.yaml` — a wheel/caster
+  joint z-offset that buried the wheels 3 cm below the floor at spawn, caster friction too high
+  for in-place rotation, and (the real structural fix) the caster's mass being small enough
+  that torque balance put the robot's center of mass essentially at the wheel axle, so the
+  caster carried only ~2% of the robot's static weight — enough that ordinary braking/turning
+  could momentarily unweight it and tip the chassis. Fixed by correcting the joint geometry,
+  giving the caster near-zero friction, and raising its mass share to ~15% (still physically
+  reasonable for a real caster assembly). Verified with a full 32-segment driving sweep showing
+  zero tip events, pitch/roll exactly 0.0 throughout.
+- A second, independent SLAM issue remained after the physics fix: fast 180°/360° in-place
+  spins combined with Phase 1's deliberately-narrowed ~180° LiDAR FOV caused scan-matcher
+  tracking loss (a double-mapped, rotated-duplicate room outline). Fixed by retiring the
+  hand-rolled `cmd_vel`-scripting approach to mapping sweeps in favor of `NavigateToPose`
+  waypoint goals — using Nav2's own MPPI controller and costmap-based planner instead of
+  re-implementing a worse version of the same capability. Produced a clean, visually-verified
+  map (correct room outline, pillars and shelf poles in their right places, no ghosts).
+- The overshoot was NavFn's known near-goal degenerate-path brittleness (already partially
+  fixed once before) recurring at a slightly larger stall distance; fixed by loosening
+  `xy_goal_tolerance`/planner `tolerance` further, kept in sync per the config's own comment.
+
+Also confirmed: AMCL localizes and tracks accurately (~1.3 cm against odometry ground truth
+after driving); the DDS/lifecycle hangs did not recur after the CycloneDDS switch + hygiene
+tooling from the first session. Full bug-by-bug trail, including the several intermediate
+fixes that were necessary but not sufficient on their own, is in `docs/phase2-findings.md` —
+worth reading before touching robot dynamics or the mapping scripts again.
 
 **AMCL tuning is a first-class task in this phase, not an afterthought** — Phase 1's LiDAR
 mask (§ Phase 1 above, `docs/phase1-findings.md`) reduced the sensor from 360° to a clean

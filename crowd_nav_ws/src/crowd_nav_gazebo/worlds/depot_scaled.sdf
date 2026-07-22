@@ -1,7 +1,12 @@
 <?xml version="1.0" ?>
 <sdf version="1.7">
   <world name="crowd_nav_depot_scaled">
-    <physics name="1ms" type="ignored">
+    <physics name="10ms" type="ignored">
+      <!-- Renamed from "1ms" (its value was always 10ms - a stale/misleading label, not a
+           step-size bug: tried tightening to 0.001 while chasing a tip-over bug during Phase 2
+           (docs/phase2-findings.md) and confirmed it made no difference to that issue, which
+           turned out to be a caster mass/friction problem, not a solver-precision one. Reverted
+           to 0.01 to avoid the ~3x CPU cost for no benefit; just fixed the name to match. -->
       <max_step_size>0.01</max_step_size>
       <real_time_factor>1.0</real_time_factor>
     </physics>

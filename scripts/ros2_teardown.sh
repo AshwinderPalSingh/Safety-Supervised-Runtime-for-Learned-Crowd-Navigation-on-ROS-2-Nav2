@@ -14,7 +14,14 @@
 # appear in this script's own invocation command, so pgrep/pkill -f here can't self-match the
 # way it did during interactive Phase 1/2 debugging (see docs/phase1-findings.md) - that
 # footgun is specifically about a pattern appearing in the text of the command that's running
-# the search, which isn't the case for `bash ros2_teardown.sh`.
+# the search, which isn't the case for `bash ros2_teardown.sh` invoked on its own.
+#
+# CONFIRMED IN PRACTICE (Phase 2, second occurrence): that safety breaks if this script is
+# invoked in the SAME shell command as something else that itself contains one of these
+# patterns as literal text (e.g. a manual `pkill`/`grep` one-liner run just before it) - the
+# self-match risk comes back because the *combined* command line now contains the pattern
+# again. Always invoke this script by itself, not chained after other pattern-matching
+# commands in the same call.
 set -uo pipefail
 
 PATTERNS=(

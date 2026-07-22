@@ -40,7 +40,18 @@
        and caster are metal-geared/small and a modest fraction of the total is a safe
        approximation for inertia purposes on a robot this size. -->
   <xacro:property name="wheel_mass"  value="0.05"/>  <!-- [PENDING], each wheel -->
-  <xacro:property name="caster_mass" value="0.02"/>  <!-- [PENDING] -->
+  <!-- caster_mass revised up from an initial 0.02 kg (docs/phase2-findings.md): that value
+       treated the caster as just the bare ball, but a real caster is an assembly (bracket +
+       swivel + ball), and more importantly, with chassis mass distributed as a symmetric box
+       centered directly over the drive-wheel axle, the system COM sits almost exactly at the
+       wheel axle (torque-balance math: COM offset from the axle is caster_mass*caster_offset_x
+       / total_mass) - at 0.02 kg the caster carried only ~2% of the robot's static weight, a
+       stability margin so thin that ordinary accel/decel transients during driving (braking
+       after forward motion, reversing turn direction) could momentarily unweight it enough to
+       tip the chassis, confirmed via ground-truth pose logging across many repro attempts.
+       0.15 kg brings that to ~15% - still physically reasonable for a caster assembly on a 1 kg
+       robot, and enough static margin that transient unweighting no longer fully lifts it. -->
+  <xacro:property name="caster_mass" value="0.15"/>  <!-- [PENDING] -->
   <xacro:property name="chassis_mass" value="${total_mass - 2*wheel_mass - caster_mass}"/>
 
   <!-- Wheel axle height above the ground/base_footprint plane. Derived from wheel_radius
@@ -157,8 +168,32 @@
     <joint name="${prefix}_wheel_joint" type="continuous">
       <parent link="base_link"/>
       <child link="${prefix}_wheel"/>
-      <origin xyz="0 ${reflect * wheel_separation/2.0} ${axle_z - chassis_z}" rpy="0 0 0"/>
+      <!-- base_link's own origin (via base_footprint_joint) is already placed at axle_z above
+           the ground, so the wheel joint needs NO further z-offset - it sits at z=0 relative to
+           base_link. A previous version used "${axle_z - chassis_z}" here (-0.03 m), which
+           re-offset the wheel relative to the CHASSIS's center height instead of relative to
+           base_link's own (already-correct) origin. That silently buried the wheels 3 cm below
+           the ground plane at spawn (while the caster, computed off the same wrong baseline,
+           ended up floating ~1 cm above it) - the physics engine's contact resolution reacted
+           to that invalid interpenetration with a large corrective torque, tipping the chassis
+           to a stable ~33 deg equilibrium within about two minutes of sim time, with the wheels
+           still spinning throughout (encoder-driven odometry kept accumulating "distance" the
+           whole time). That is what actually produced the "ghost obstacle" SLAM map corruption
+           and the huge odom-vs-ground-truth divergence chased across the v1-v4 driving-script
+           iterations (docs/phase2-findings.md) - none of those were the real bug. Confirmed via
+           a ground-truth pose monitor showing pitch grow steadily from spawn with ZERO drive
+           commands ever sent, ruling out anything in the driving scripts. -->
+      <origin xyz="0 ${reflect * wheel_separation/2.0} 0" rpy="0 0 0"/>
       <axis xyz="0 1 0"/>
+      <!-- Joint damping: a real motor/gearbox has internal damping a rigid-body sim doesn't
+           model by default. Without it, ANY sudden commanded-velocity reversal (braking after
+           forward motion, reversing turn direction, turning right after forward motion) applies
+           a near-instant torque change to a wheel, which - combined with the caster's very thin
+           static load margin, see the caster friction comment below - was enough to tip the
+           chassis. diff_drive_controller.yaml's acceleration limits address the SAME root cause
+           from the command side (see its comment) but only for the specific transition each
+           limit targets; this is the general, structural version of the same fix. -->
+      <dynamics damping="0.05" friction="0.0"/>
     </joint>
   </xacro:macro>
 
@@ -190,7 +225,11 @@
   <joint name="caster_wheel_joint" type="fixed">
     <parent link="base_link"/>
     <child link="caster_wheel"/>
-    <origin xyz="${caster_offset_x} 0 ${axle_z - chassis_z + wheel_radius - caster_radius}" rpy="0 0 0"/>
+    <!-- Caster sphere's bottom should touch the ground plane, same as the wheels: center at
+         caster_radius above ground, i.e. (caster_radius - axle_z) relative to base_link's
+         origin (which sits at axle_z above ground). See the wheel joint comment above for the
+         wrong-baseline bug this replaces. -->
+    <origin xyz="${caster_offset_x} 0 ${caster_radius - axle_z}" rpy="0 0 0"/>
   </joint>
 
   <!-- ================= LiDAR ================= -->
@@ -212,6 +251,38 @@
 
   <gazebo reference="base_link">
     <material>Gazebo/Grey</material>
+  </gazebo>
+
+  <!-- Caster friction: no friction coefficient was specified anywhere for this model, so the
+       physics engine's default (high enough to resist sliding) applied to the caster sphere too.
+       During any pure in-place rotation (ang!=0, lin=0 - used constantly by the SLAM coverage
+       sweep scripts, docs/phase2-findings.md), the two drive wheels spin in place while the
+       caster, offset behind the axle, needs to scrub/slide sideways to let the chassis pivot. A
+       high-friction caster can't do that smoothly - it catches, and the resulting torque tips
+       the chassis up on one side while yaw keeps climbing unbounded and x/y freezes. Confirmed
+       empirically: ground-truth pose logging showed exactly this signature (frozen position,
+       runaway yaw, pitch jumping to ~17 deg) starting mid-way through the very first in-place
+       turn segment of a sweep, on a model where the earlier wheel/caster z-offset bug (see the
+       wheel joint comment above) had already been fixed and ruled out. Near-zero friction here
+       lets the caster pivot freely, as it physically would (it's a small low-friction ball
+       caster on the real hardware, not a driven/gripping wheel). -->
+  <gazebo reference="caster_wheel">
+    <mu1>0.001</mu1>
+    <mu2>0.001</mu2>
+  </gazebo>
+
+  <!-- Drive wheel friction: previously left unspecified (engine default), same as the ground
+       plane's own unspecified <ode/> friction block. Set explicitly to a normal, grippy value -
+       traction is what lets the wheels roll instead of skid, including during the sudden
+       rolling-to-differential transition when a forward move is immediately followed by an
+       in-place turn. -->
+  <gazebo reference="left_wheel">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+  </gazebo>
+  <gazebo reference="right_wheel">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
   </gazebo>
 
 </robot>

@@ -1,7 +1,7 @@
 image: depot_scaled.pgm
 mode: trinary
 resolution: 0.03
-origin: [-0.9, -3.19, 0]
+origin: [-1.1, -2.19, 0]
 negate: 0
 occupied_thresh: 0.65
 free_thresh: 0.25

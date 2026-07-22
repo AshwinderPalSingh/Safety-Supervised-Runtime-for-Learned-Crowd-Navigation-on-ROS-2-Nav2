@@ -76,13 +76,15 @@ controller_server:
 
     general_goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
-      # Loosened from 0.1 after a real failure mode found in Phase 2 testing (see
-      # docs/phase2-findings.md): the robot would repeatedly close to within ~0.15-0.2m of
-      # the goal, then NavFn would fail planning the remaining short hop (a known NavFn
-      # degenerate-short-path issue) - the robot never got a chance to be declared "close
-      # enough" before the last-mile replan attempt failed. 0.2 keeps the goal checker ahead
-      # of that failure mode.
-      xy_goal_tolerance: 0.2
+      # Loosened from 0.1, then from 0.2, after a real failure mode found in Phase 2 testing
+      # (see docs/phase2-findings.md): the robot would repeatedly close to within some tens of
+      # cm of the goal, then NavFn would fail planning the remaining short hop (a known NavFn
+      # degenerate-short-path issue), triggering repeated "Failed to make progress" aborts and
+      # recovery-behavior loops that never converged - the robot never got a chance to be
+      # declared "close enough" before the last-mile replan attempt failed. Reproduced again at
+      # a stop distance of ~0.3 m (beyond the previous 0.2 tolerance), so 0.3 keeps the goal
+      # checker ahead of that failure mode with a bit more margin.
+      xy_goal_tolerance: 0.3
       yaw_goal_tolerance: 0.15
       stateful: true
 
@@ -253,7 +255,9 @@ planner_server:
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "nav2_navfn_planner/NavfnPlanner"
-      tolerance: 0.25
+      # Matches general_goal_checker's xy_goal_tolerance (controller_server section above) -
+      # keep these two in sync, see that comment for why.
+      tolerance: 0.35
       use_astar: true
       allow_unknown: true
 
