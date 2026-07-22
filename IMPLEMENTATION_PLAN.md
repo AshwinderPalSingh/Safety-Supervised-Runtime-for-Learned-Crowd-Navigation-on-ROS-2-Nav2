@@ -1,9 +1,9 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.7 (2026-07-21, updated 2026-07-22) — Phase 3 done, Phase 4 rescoped
+## Implementation Plan v1.8 (2026-07-21, updated 2026-07-22) — Phase 4 done
 
 This document is the living plan for the project, updated as each phase lands rather than
-frozen at the start. Phases 0–3 are done as of this revision (§3 has current status per
-phase); everything from Phase 4 onward is still plan, not implementation.
+frozen at the start. Phases 0–4 are done as of this revision (§3 has current status per
+phase); everything from Phase 5 onward is still plan, not implementation.
 
 **v1.1 changes** (post-review, same day): inserted a synthetic-adapter phase before SARL to
 decouple runtime-plumbing risk from SARL-search-correctness risk (§3, new Phase 6); confirmed
@@ -110,6 +110,18 @@ actually did) - see §5 below.
 a safety-critical component checking against state/a costmap that the thing it's supposed to
 agree with doesn't share - is explicitly flagged as likely to recur there, not just noted once
 and forgotten.
+
+**v1.8 changes (2026-07-22)**: Phase 4 implemented and closed per the v1.7 rescope - full trail
+in `docs/phase4-findings.md`. All four done-bar items verified with direct measurement, not
+assumed from the design: determinism (byte-identical across two independent same-seed runs,
+diffed message-for-message), sim-time stepping (confirmed by pausing the Gazebo world and
+measuring `sim_time` barely advance during an 8s real-time sleep), and mirror-node correctness
+plus its RTF cost (markers spawn and track correctly; RTF unaffected at 6-pedestrian scale).
+Also found and fixed along the way: no Python gz-transport bindings are installed (ruled out
+direct topic subscription without a bridge), and the right ground-truth-pose mechanism
+(Gazebo's per-model `PosePublisher` system plugin) was confirmed by checking what's actually
+installed and testing its output topic/type directly, rather than assuming a topic name or
+message shape from memory - the same discipline as the LoadMap.srv finding in v1.7.
 
 ---
 
@@ -626,30 +638,35 @@ message's own doc comment (`LoadMap.srv`'s `map_url` field) describing a `file:/
 that this build actually rejects — verify against the real service, not the docstring, even
 for code that isn't this project's own.
 
-**Phase 4 — Pedestrian simulation (rescoped v1.7, see §1.2)**
-A single ROS node (ORCA or social-force based) owning pedestrian state, `reactive`/
-`non_reactive` as config flags on that one implementation (not two separate mechanisms -
-HuNav dropped entirely), robot pose injected from Gazebo ground truth (not `/odom`), seeded
-from the scenario seed, stepping on sim time (subscribes to `/clock`, not wall-clock timers).
-A separate, launch-toggleable, off-by-default Gazebo actor mirror node provides visual-only
-representation for demos - never authoritative, never read by anything downstream.
+**Phase 4 — Pedestrian simulation (rescoped v1.7, see §1.2) — DONE, done-bar met**
+`crowd_nav_pedestrians` package: a single deterministic Helbing-style social-force ROS node
+(`pedestrian_sim_node.py`) owning pedestrian state, `reactive`/`non_reactive` as one config
+flag (not two separate mechanisms - HuNav dropped entirely), robot pose injected from Gazebo
+ground truth via a `PosePublisher` plugin + `ros_gz_bridge` (not `/odom`), seeded from a single
+`random.Random(seed)` instance, stepping in fixed `dt` increments keyed to accumulated
+`/clock` time (not wall-clock timers). A separate, launch-toggleable, off-by-default Gazebo
+actor mirror node (`actor_mirror_node.py`) provides visual-only representation for demos -
+never authoritative, never read by anything downstream. Full trail: `docs/phase4-findings.md`.
 
-**Done:**
+**Done, verified with direct measurement (docs/phase4-findings.md has the full trail):**
 - Pedestrians publish the ground-truth human-state topic/schema; `reactive`/`non_reactive` and
   mirror-on/off are independent launch-time switches, not code forks.
-- **Determinism proven, not assumed**: two runs with the same seed produce byte-identical
-  pedestrian trajectories (exact position/velocity match at every tick, not "visually similar")
-  - this is the entire justification for dropping HuNav, so it's verified here, before Phase
-  10's evaluation matrix would otherwise be the first place a topic-ordering race or an
-  unseeded RNG somewhere got discovered.
-- **Sim-time stepping confirmed**, not assumed: with the pedestrian node paused/slowed via
-  Gazebo's own sim-time controls (or an artificially throttled RTF), pedestrian motion slows
-  in lockstep, not drifting wall-clock-relative - proving the node is actually clock-subscribed
-  and not just plausible-looking under normal RTF~1.0 conditions.
+- **Determinism proven, not assumed**: two independent fresh launches (full teardown between
+  them), same seed, captured and diffed the first 100 published messages from each - every
+  overlapping sim-time-indexed message was byte-identical (position/velocity to 6 decimal
+  places). This is the entire justification for dropping HuNav, verified here rather than
+  first discovered broken at Phase 10's evaluation matrix.
+- **Sim-time stepping confirmed**, not assumed: paused the running Gazebo world mid-simulation
+  via its `WorldControl` service and measured `sim_time` directly - it advanced only ~0.47s
+  during an 8-second real-time sleep while paused, and the pedestrian node (which steps
+  exclusively from accumulated `/clock` values) froze in lockstep and resumed correctly from
+  the frozen point on unpause.
 - **Headless correctness + mirroring cost measured**: the full pedestrian simulation runs
-  correctly with the mirror node disabled (the default, and the only mode Phase 10's
-  evaluation harness will actually use). With the mirror enabled, RTF impact is measured and
-  recorded (not assumed negligible) - if it's non-trivial, that's exactly why it defaults off.
+  correctly with the mirror disabled (the default). With it enabled, all marker models spawned
+  and tracked their pedestrians' positions correctly; sampled `real_time_factor` showed no
+  measurable difference (~0.9999-1.0 in both conditions) at this scale (6 pedestrians) - a
+  real measurement, not an assumption, worth re-checking if pedestrian count scales up a lot
+  later.
 
 **Phase 5 — HumanStateSource, perception degradation, observation builder**
 `GroundTruthHumanSource` wrapping the Phase 4 topic, degradation model (Gaussian

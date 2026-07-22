@@ -23,10 +23,13 @@ shells pick it up automatically; only needed manually in non-interactive/scripte
 `scripts/check_dds_health.sh` and `scripts/ros2_teardown.sh` provide an automated dirty-state
 check and safe cleanup regardless of which RMW is active - see Phase 2 findings for both.
 
-**Status**: Phase 3 of 12 complete (Phase 2: baseline Nav2 + AMCL + SLAM, 5/5 goals both modes,
-verified against ground-truth pose - `docs/phase2-findings.md`. Phase 3: dynamic keep-out
-zones, verified with a real mid-navigation block-and-detour test, not just presence at launch -
-`docs/phase3-findings.md`). See `IMPLEMENTATION_PLAN.md` §3 for the full phase list.
+**Status**: Phase 4 of 12 complete. Phase 2: baseline Nav2 + AMCL + SLAM, 5/5 goals both modes,
+verified against ground-truth pose (`docs/phase2-findings.md`). Phase 3: dynamic keep-out
+zones, verified with a real mid-navigation block-and-detour test (`docs/phase3-findings.md`).
+Phase 4: deterministic pedestrian simulation (HuNav dropped - see `IMPLEMENTATION_PLAN.md`
+§1.2), byte-identical seeded reproduction and sim-time stepping proven by direct measurement,
+not assumed (`docs/phase4-findings.md`). See `IMPLEMENTATION_PLAN.md` §3 for the full phase
+list.
 
 ## Known limitations (stated deliberately, not discovered as accidents)
 
