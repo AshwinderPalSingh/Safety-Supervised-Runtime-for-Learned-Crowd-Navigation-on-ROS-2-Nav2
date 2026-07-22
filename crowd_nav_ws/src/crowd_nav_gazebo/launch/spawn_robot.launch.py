@@ -1,15 +1,20 @@
 import os
 
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import Command, FindExecutable, PathJoinSubstitution
+from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    world_file_arg = DeclareLaunchArgument('world_file', default_value='empty.sdf')
+    spawn_x_arg = DeclareLaunchArgument('spawn_x', default_value='0.0')
+    spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value='0.0')
+    spawn_yaw_arg = DeclareLaunchArgument('spawn_yaw', default_value='0.0')
+
     # Quoted explicitly: this workspace's path contains spaces (the project directory name),
     # and Command() shlex-splits its resolved string, which would otherwise fragment the path
     # into multiple bogus arguments.
@@ -43,7 +48,9 @@ def generate_launch_description():
     gz_sim = ExecuteProcess(
         cmd=[
             'ign', 'gazebo', '-r', '-s', '-v', '1',
-            PathJoinSubstitution([FindPackageShare('crowd_nav_gazebo'), 'worlds', 'empty.sdf']),
+            PathJoinSubstitution([
+                FindPackageShare('crowd_nav_gazebo'), 'worlds', LaunchConfiguration('world_file'),
+            ]),
         ],
         additional_env={'IGN_GAZEBO_SYSTEM_PLUGIN_PATH': ld_library_path},
         output='screen',
@@ -53,7 +60,12 @@ def generate_launch_description():
         package='ros_gz_sim',
         executable='create',
         output='screen',
-        arguments=['-topic', 'robot_description', '-name', 'nvis_3302ard', '-allow_renaming', 'true'],
+        arguments=[
+            '-topic', 'robot_description', '-name', 'nvis_3302ard', '-allow_renaming', 'true',
+            '-x', LaunchConfiguration('spawn_x'),
+            '-y', LaunchConfiguration('spawn_y'),
+            '-Y', LaunchConfiguration('spawn_yaw'),
+        ],
     )
 
     clock_bridge = Node(
@@ -87,6 +99,10 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        world_file_arg,
+        spawn_x_arg,
+        spawn_y_arg,
+        spawn_yaw_arg,
         gz_sim,
         robot_state_publisher,
         clock_bridge,

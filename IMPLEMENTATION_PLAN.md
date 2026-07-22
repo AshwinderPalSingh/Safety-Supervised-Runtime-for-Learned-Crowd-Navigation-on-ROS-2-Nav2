@@ -464,12 +464,28 @@ CPU-raycast `lidar` sensor type (found completely non-functional on this install
 Phase 2 needs to either mask the known-bad sector in software or find an actual renderer-level
 fix before AMCL/costmap work can trust the full 360° scan.
 
-**Phase 2 — Baseline Nav2 (MPPI) + AMCL + SLAM toolbox**
+**Phase 2 — Baseline Nav2 (MPPI) + AMCL + SLAM toolbox — IN PROGRESS, done-bar not yet met**
 Stock Nav2 with `nav2_mppi_controller`, AMCL against a saved map, `slam_toolbox` online
-mapping as an alternate launch mode, on whichever world(s) Phase 0 settled on. This *is* the
-`baseline_mppi` eval config's runtime. **Done:** robot navigates a goal in both AMCL mode
-(saved map) and SLAM mode (online map); SLAM mode is a launch-file demo only — it is not
-wired into the evaluation harness (see §6).
+mapping as an alternate launch mode, on the scaled depot world Phase 0 planned and this phase
+built (`depot_scaled.sdf`, generated from Phase 0's extracted primitive geometry). This *is*
+the `baseline_mppi` eval config's runtime. **Agreed done-bar** (set explicitly before starting,
+per the process note this phase raised): five consecutive successful goals from different
+start poses, in both AMCL mode (saved map) and SLAM mode (online map), with no manual
+intervention. **Not yet met** — full diagnostic trail in `docs/phase2-findings.md`.
+
+Real progress made: the world, full Nav2 stack, and SLAM-built map all function; AMCL
+localizes and tracks accurately (confirmed to ~1.3 cm against odometry ground truth after
+driving); one full `NavigateToPose` goal succeeded end-to-end after fixing several real bugs
+(MPPI footprint config, a plugin-lookup-name convention that's inconsistent across Nav2
+packages, AMCL's `initial_pose` being in map frame not world frame, an undersized circular
+`robot_radius`, and an `xy_goal_tolerance` too tight for NavFn's short-distance planning
+behavior near a goal). What's still open: a "ghost obstacle" artifact discovered in the
+SLAM-built map (confirmed via direct costmap inspection, not assumed — real geometry doesn't
+exist where the costmap shows near-lethal cost), one unexplained navigation overshoot on the
+second goal of a chained test, and — separately — recurring Nav2 lifecycle-activation hangs
+that look like session-level DDS infrastructure fragility after many hours of continuous
+process churn, not a configuration bug. Stopped live debugging at that point rather than
+continue an open-ended chase; SLAM-mode testing wasn't reached this session.
 
 **AMCL tuning is a first-class task in this phase, not an afterthought** — Phase 1's LiDAR
 mask (§ Phase 1 above, `docs/phase1-findings.md`) reduced the sensor from 360° to a clean
