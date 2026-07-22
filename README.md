@@ -62,5 +62,18 @@ visible up front rather than buried in a findings doc no one reads before citing
   perception-degradation model (noise, dropout, latency, occlusion) is exercised in the
   evaluation harness.
 
+## Known upstream API/doc discrepancies (verified against real behavior, not assumed)
+
+Nav2's own documentation isn't always right either — worth a standing reminder to verify
+against the actual running service/behavior, not just the docstring, the same discipline this
+project applies to its own claims.
+
+- **`nav2_msgs/srv/LoadMap`'s `map_url` field doc comment describes a `file:///path/to/map.yaml`
+  form as valid.** On this project's Nav2 Humble build, a `file://`-prefixed URL makes
+  `map_server` return `RESULT_INVALID_MAP_METADATA` for any map, including a trivially valid
+  one used to isolate the cause — confirmed via direct `ros2 service call` testing. A plain
+  absolute path (no scheme prefix) works correctly. Used by `crowd_nav_zones`' zone-manager
+  node (Phase 3, `docs/phase3-findings.md`) to reload the keep-out zone mask at runtime.
+
 More will be added here as later phases land. See `IMPLEMENTATION_PLAN.md` for anything not
 yet reflected here — this file summarizes it, not the other way around.

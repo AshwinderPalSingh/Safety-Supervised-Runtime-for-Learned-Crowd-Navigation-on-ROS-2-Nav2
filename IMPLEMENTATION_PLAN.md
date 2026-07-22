@@ -1,9 +1,9 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.6 (2026-07-21, updated 2026-07-22) — Phase 1 done, LiDAR masked
+## Implementation Plan v1.7 (2026-07-21, updated 2026-07-22) — Phase 3 done, Phase 4 rescoped
 
 This document is the living plan for the project, updated as each phase lands rather than
-frozen at the start. Phases 0–1 are done as of this revision (§3 has current status per
-phase); everything from Phase 2 onward is still plan, not implementation.
+frozen at the start. Phases 0–3 are done as of this revision (§3 has current status per
+phase); everything from Phase 4 onward is still plan, not implementation.
 
 **v1.1 changes** (post-review, same day): inserted a synthetic-adapter phase before SARL to
 decouple runtime-plumbing risk from SARL-search-correctness risk (§3, new Phase 6); confirmed
@@ -66,6 +66,50 @@ Confirmed exact gz-sim version (6.18.0) and searched upstream for a matching iss
 found exactly, closest is the still-open `gazebosim/gz-sim#2743` (general `gpu_lidar` accuracy
 degradation). Phase 2's plan updated to treat AMCL tuning and costmap raytracing/decay as
 first-class tasks given the reduced FOV, not afterthoughts discovered later in Phase 10.
+
+**v1.7 changes (2026-07-22)**: Phases 2 and 3 closed (their own done-bars fully met, not
+partially) — see `docs/phase2-findings.md` and `docs/phase3-findings.md` for the full trails;
+§3's Phase 2/3 entries below carry the summary. Phase 4 rescoped before any implementation
+started, per the reasoning below — plan changed first, code follows, not the other way around.
+
+**§1.5 correction**: Phase 3 found this section's original "no surprises" claim was wrong on
+two counts, not zero — see the rewritten §1.5 below and `docs/phase3-findings.md` for detail.
+Worth stating plainly: the resulting global-costmap fix was **a plan bug, not an
+implementation detail** — §3's Phase 3 text specified "stock KeepoutFilter in the local
+costmap" as if that were sufficient, and it produced exactly the failure that specification
+predicts (global planner keeps handing MPPI a path through the zone, MPPI can't execute it,
+Nav2 spins in recovery forever). A bug caught by implementation and fixed in the plan is the
+right direction for bugs to travel; recorded here rather than only in the phase findings doc
+so the plan document itself carries the correction, not just the implementation.
+
+**Phase 4 rescoped** (before implementation, per the above): HuNav dependency **dropped
+entirely** — §1.2 rewritten below. Pedestrian state moves to a single ROS node (ORCA or
+social-force based), with `reactive`/`non_reactive` as **config flags on that one
+implementation**, not two separate mechanisms as originally planned. The robot's pose is
+injected from Gazebo ground truth, not `/odom` (odometry drift would leak into pedestrian
+reactive behavior for no good reason - the pedestrian model should react to where the robot
+actually is). Seeded from the scenario seed, with **byte-identical trajectory reproduction
+across same-seed runs added to the done-bar** - this is the entire justification for dropping
+HuNav (determinism a HuNav-wrapped social-force engine doesn't cleanly offer), so it needs to
+be proven now, not assumed and discovered broken at Phase 10's evaluation matrix. Also added
+to the done-bar: the pedestrian node must step on **sim time, not wall clock** - with this
+project's measured RTF sometimes below 1.0 under load (Phase 2's heavier physics-step
+experiments), a wall-clock-driven simulator would silently desynchronize from Gazebo and
+seeded reproducibility would be meaningless regardless of the RNG. New: a visual-only Gazebo
+actor **mirror node**, launch-toggleable and off by default, for visualization/demo purposes
+only - the authoritative pedestrian state is the ROS node's, never the mirror's. Done-bar
+additions from this: pedestrians must run correctly headless with mirroring disabled, and the
+RTF impact of running the mirror must be measured and recorded, not assumed negligible.
+
+**§5 risk #6 replaced**: HuNav's non-reactive gap (the original risk) no longer applies - there
+is no HuNav integration to have a gap in. New risk in its place: the mirror node drifting out
+of sync with the authoritative pedestrian state (visualization lying about what the simulation
+actually did) - see §5 below.
+
+**Forward-note added to Phase 9** (§3): the same class of error as the §1.5 correction above -
+a safety-critical component checking against state/a costmap that the thing it's supposed to
+agree with doesn't share - is explicitly flagged as likely to recur there, not just noted once
+and forgotten.
 
 ---
 
@@ -175,22 +219,39 @@ Side finding, independent of scale: the shelf collision is only 3 cm-radius corn
 full shelf footprints — worth knowing before assuming the depot is collision-realistic at any
 scale, though it doesn't change the scale conclusion.
 
-### 1.2 Pedestrian simulation: HuNav vs custom
+### 1.2 Pedestrian simulation: single ROS node, HuNav dropped (rescoped in v1.7)
 
-`hunav_gazebo_fortress_wrapper` (robotics-upo) is real, Fortress+Humble native, and is the
-right choice for the `reactive` pedestrian mode — it wraps HuNavSim's social-force-based
-agents behind a Gazebo plugin, with six behavior types (regular / impassive / surprised /
-scared / curious / threatening).
+**Original plan (superseded, kept below for the record): `hunav_gazebo_fortress_wrapper`
+(robotics-upo) for `reactive`, a second independent scripted-actor mechanism for
+`non_reactive`.** Real and Fortress+Humble native, but two independent mechanisms sharing only
+a topic schema means two independent sources of nondeterminism, two things that can drift out
+of sync with each other, and no clean story for byte-identical seeded reproduction across a
+whole evaluation matrix (Phase 10) - HuNav's social-force engine isn't built around that
+guarantee. Rescoped before implementation started (v1.7, prompted by review, applied to the
+plan document itself rather than only in code - see the v1.7 changelog entry above).
 
-None of those is a true non-reactive control condition. "Impassive" is the closest, but it
-still routes through HuNav's own behavior engine for the pedestrian's path — it's not
-guaranteed to be a pure fixed-waypoint follower with zero awareness of anything. Rather than
-fighting HuNav's engine to suppress that, I'm building a second, independent mechanism for
-`non_reactive` mode: a small custom node/plugin that drives Gazebo actors along fixed,
-pre-scripted waypoint loops with no robot-awareness and no social force model at all. Both
-mechanisms publish to the same ground-truth human-state topic/schema, so everything
-downstream (`GroundTruthHumanSource`, observation builder, evaluation harness) is blind to
-which one is active — pedestrian mode is a launch-time switch, not a code fork.
+**Current plan**: pedestrian state lives in a single ROS node, not a Gazebo plugin - an
+ORCA-based or social-force-based simulator (implementation detail, either is fine; the
+requirement is determinism, not which algorithm), with `reactive` and `non_reactive` as
+**config flags on that one implementation**, not two separate mechanisms. The robot's pose fed
+into the pedestrian model comes from **Gazebo ground truth, not `/odom`** - odometry drift has
+no business leaking into how simulated pedestrians react to the robot's actual position. The
+node is seeded from the scenario's seed (Phase 10's seeded scenario suite, §3), and **must
+produce byte-identical pedestrian trajectories across two runs with the same seed** - this is
+the actual justification for dropping HuNav, so Phase 4's done-bar proves it directly rather
+than assuming it. The node **steps on sim time** (subscribes to `/clock`, not wall-clock
+timers) - with RTF sometimes below 1.0 under this project's heavier physics-step
+configurations (Phase 2), a wall-clock-driven pedestrian simulator would silently desynchronize
+from Gazebo, making seeded reproducibility meaningless regardless of how careful the RNG
+seeding is.
+
+A new, separate **Gazebo actor mirror node** provides visual-only representation of the
+ROS node's authoritative pedestrian state, for demo/visualization purposes - **launch-toggleable
+and off by default**. It never feeds anything back into the simulation; it only reads the
+ROS node's published state and moves Gazebo actors to match, so it can drift or lag without
+corrupting anything downstream (`GroundTruthHumanSource`, the observation builder, the
+evaluation harness) - they all consume the ROS node's topic directly, never the mirror. Both
+`reactive`/`non_reactive` mode and mirror-on/off are launch-time switches, not code forks.
 
 ### 1.3 ONNX Runtime packaging
 
@@ -250,12 +311,35 @@ propagation, a batched ONNX Runtime call, and the argmax. That's genuinely more 
 being called the "easy" policy) integration — see §6 for why I'm not worried this contradicts
 the brief's reusability goal.
 
-### 1.5 Nav2 KeepoutFilter — no surprises
+### 1.5 Nav2 KeepoutFilter — two real surprises, corrected in v1.7 after Phase 3 implementation
 
-Confirmed: the mask topic uses latched/transient-local QoS specifically so a new
-`OccupancyGrid` can be republished at runtime and picked up without restarting the filter.
-Our zone-manager node is a plain publisher with a CRUD service in front of it — no Nav2 patches,
-no custom `CostmapFilter` plugin needed. This part of the brief is exactly as easy as it looks.
+**Originally claimed "no surprises" here — wrong, on two counts, both found only once actually
+implemented and tested against the phase's real done-bar, not assumed from reading Nav2's
+docs.** Full trail in `docs/phase3-findings.md`; summary:
+
+1. **"Stock KeepoutFilter in the local costmap" (this plan's own original Phase 3 text) is not
+   sufficient** for a zone to actually cause a replan, only for it to be locally respected.
+   The global costmap/planner (NavFn) has no knowledge of a zone that's only in the local
+   costmap, so it keeps handing MPPI the same path straight through it - MPPI correctly
+   refuses to violate the keepout, and Nav2 spins in an infinite recovery loop instead of
+   replanning. This was **a plan bug, not an implementation detail** - the fix (KeepoutFilter
+   in both costmaps) had to happen in this document, not just in `nav2_params.yaml`. The
+   general shape of this error - a component checking against costmap/state that the thing
+   it needs to agree with doesn't share - is flagged as likely to recur in Phase 9 (§3).
+2. The zone-manager node here is **not** "a plain publisher with a CRUD service in front of
+   it," as originally written - it's a CRUD service in front of a node that writes a map file
+   and asks a real `map_server` instance to reload it via Nav2's own `LoadMap` service,
+   deliberately avoiding hand-rolling `OccupancyGrid` publishing logic Nav2 already provides
+   (see `docs/phase2-findings.md`'s "don't reimplement the stack," applied here). That path
+   itself had a real surprise: `LoadMap.srv`'s own doc comment describes a `file://`-prefixed
+   URL form that this Nav2 build's `map_server` actually rejects (`RESULT_INVALID_MAP_METADATA`)
+   - a plain absolute path works. Verified directly against the running service, not assumed
+   from the message definition's comment - documented in the README's "Known upstream API/doc
+   discrepancies" section.
+
+Everything else in the original claim held: the mask topic does use latched/transient-local
+QoS specifically so a new `OccupancyGrid` can be republished at runtime and picked up without
+restarting the filter, and no Nav2 patches or custom `CostmapFilter` plugin were needed.
 
 ### 1.6 ros2_control / gz_ros2_control
 
@@ -542,11 +626,30 @@ message's own doc comment (`LoadMap.srv`'s `map_url` field) describing a `file:/
 that this build actually rejects — verify against the real service, not the docstring, even
 for code that isn't this project's own.
 
-**Phase 4 — Pedestrian simulation**
-HuNav reactive integration (`regular` behavior) + custom non-reactive scripted-actor node,
-both publishing a common ground-truth human-state topic. **Done:** both pedestrian modes are
-launch-time switchable; topic echo shows identical schema regardless of which backend is
-running.
+**Phase 4 — Pedestrian simulation (rescoped v1.7, see §1.2)**
+A single ROS node (ORCA or social-force based) owning pedestrian state, `reactive`/
+`non_reactive` as config flags on that one implementation (not two separate mechanisms -
+HuNav dropped entirely), robot pose injected from Gazebo ground truth (not `/odom`), seeded
+from the scenario seed, stepping on sim time (subscribes to `/clock`, not wall-clock timers).
+A separate, launch-toggleable, off-by-default Gazebo actor mirror node provides visual-only
+representation for demos - never authoritative, never read by anything downstream.
+
+**Done:**
+- Pedestrians publish the ground-truth human-state topic/schema; `reactive`/`non_reactive` and
+  mirror-on/off are independent launch-time switches, not code forks.
+- **Determinism proven, not assumed**: two runs with the same seed produce byte-identical
+  pedestrian trajectories (exact position/velocity match at every tick, not "visually similar")
+  - this is the entire justification for dropping HuNav, so it's verified here, before Phase
+  10's evaluation matrix would otherwise be the first place a topic-ordering race or an
+  unseeded RNG somewhere got discovered.
+- **Sim-time stepping confirmed**, not assumed: with the pedestrian node paused/slowed via
+  Gazebo's own sim-time controls (or an artificially throttled RTF), pedestrian motion slows
+  in lockstep, not drifting wall-clock-relative - proving the node is actually clock-subscribed
+  and not just plausible-looking under normal RTF~1.0 conditions.
+- **Headless correctness + mirroring cost measured**: the full pedestrian simulation runs
+  correctly with the mirror node disabled (the default, and the only mode Phase 10's
+  evaluation harness will actually use). With the mirror enabled, RTF impact is measured and
+  recorded (not assumed negligible) - if it's non-trivial, that's exactly why it defaults off.
 
 **Phase 5 — HumanStateSource, perception degradation, observation builder**
 `GroundTruthHumanSource` wrapping the Phase 4 topic, degradation model (Gaussian
@@ -608,6 +711,19 @@ Phase 2 (mapping sweep × narrow LiDAR FOV × scan matching) that reusing the st
 already-hardened logic would have avoided. Reserve genuinely custom code for what's actually
 novel here — the OOD detector and the intervention-logging/fallback decision — not for
 re-solving "is this position in collision."
+
+**Second principle carried forward, from Phase 3's §1.5 correction**: the same failure shape
+recurs whenever two components need to agree on state but only one of them actually has it.
+Phase 3's version was a global planner computing paths against a costmap that didn't know
+about active keep-out zones (only the local costmap did), producing an infinite
+disagree-and-retry loop instead of a real replan. The supervisor here is at genuine risk of the
+same class of bug if its forward-simulation collision check runs against a *different* costmap
+snapshot (different update rate, different layer set, different timing) than what the
+controller being supervised is actually acting on — the supervisor could reject or accept
+commands based on a picture of the world the controller doesn't share, producing exactly the
+kind of silent disagreement Phase 3 found the hard way. Verify explicitly that the supervisor
+reads the *same* costmap (or an explicitly-justified equivalent) the controller uses, don't
+assume a second subscription to "the costmap topic" is automatically the same picture.
 
 Forward-simulation of commanded velocity, costmap + active-keep-out-zone check, OOD detector
 (§4.4 defines concrete criteria — see below, this needed sharpening per the brief's own
@@ -850,9 +966,16 @@ hardware layer is unchanged. Nothing beyond this contract is built now.
    instead of depending on an externally-maintained one of unconfirmed Humble compatibility
    (§1.3). Fallback: `ros-industrial/epd_onnxruntime_vendor` as a second reference
    implementation if our own CMake wrapper hits an unexpected snag.
-6. **HuNav non-reactive gap** — solved by the separate scripted-actor mechanism (§1.2), not a
-   residual risk, but flagged because it means slightly more custom Gazebo-actor code than
-   "just use HuNav" implied.
+6. **Pedestrian mirror-node drift** (replaces the original "HuNav non-reactive gap" risk, which
+   no longer applies now that HuNav is dropped entirely — §1.2, v1.7) — the visual-only Gazebo
+   actor mirror node (off by default) reads the authoritative ROS pedestrian node's published
+   state and moves Gazebo actors to match; if it lags or desyncs, what's *rendered* could
+   diverge from what the simulation actually did. Mitigated by design: the mirror never feeds
+   anything back into the simulation and nothing downstream (`GroundTruthHumanSource`, the
+   observation builder, the evaluation harness) reads from it — they all consume the
+   authoritative node's topic directly, so a drifting mirror is a visualization bug, not a
+   correctness bug. Still worth a sanity check once built (mirror position vs. authoritative
+   position at a few sampled ticks) rather than assuming the design guarantee holds in practice.
 7. **Reduced 8 m LiDAR interacting with costmap/MPPI/AMCL sizing in a large depot** — mostly
    dissolves if the world-scale fallback in §1.1 lands on a compact custom world (8 m comfortably
    covers a small floor plan); only a live risk if tugbot_depot ends up used at native scale
