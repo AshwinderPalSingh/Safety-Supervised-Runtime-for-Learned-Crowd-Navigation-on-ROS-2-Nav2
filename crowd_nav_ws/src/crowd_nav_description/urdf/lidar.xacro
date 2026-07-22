@@ -1,0 +1,89 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Deliberately conservative LiDAR spec (IMPLEMENTATION_PLAN.md / brief S5.1): budget
+       8m/5Hz/~1deg sensor, not a premium unit. All parameters are xacro args, not measured
+       values, so the whole stack can be swept/tuned for the pessimistic case. -->
+  <xacro:macro name="crowd_nav_lidar"
+               params="parent_link
+                       xyz:='0 0 0' rpy:='0 0 0'
+                       range_min:=0.12
+                       range_max:=8.0
+                       update_rate:=5.0
+                       samples:=360
+                       horizontal_fov:=6.28318530718
+                       range_noise_stddev:=0.02
+                       mount_radius:=0.02
+                       mount_height:=0.02">
+
+    <link name="lidar_link">
+      <visual>
+        <geometry>
+          <cylinder radius="${mount_radius}" length="${mount_height}"/>
+        </geometry>
+        <material name="dark_grey"/>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="${mount_radius}" length="${mount_height}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <!-- Small sensor puck; negligible mass relative to the 1.0 kg total, treated as a
+             point-ish mass rather than measured separately (see MEASUREMENTS.md). -->
+        <mass value="0.02"/>
+        <inertia
+          ixx="${0.02/12.0*(3*mount_radius*mount_radius + mount_height*mount_height)}" ixy="0" ixz="0"
+          iyy="${0.02/12.0*(3*mount_radius*mount_radius + mount_height*mount_height)}" iyz="0"
+          izz="${0.02/2.0*mount_radius*mount_radius}"/>
+      </inertial>
+    </link>
+
+    <joint name="lidar_joint" type="fixed">
+      <parent link="${parent_link}"/>
+      <child link="lidar_link"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+
+    <gazebo reference="lidar_link">
+      <sensor name="lidar" type="gpu_lidar">
+        <pose>0 0 0 0 0 0</pose>
+        <update_rate>${update_rate}</update_rate>
+        <topic>scan</topic>
+        <gz_frame_id>lidar_link</gz_frame_id>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>${samples}</samples>
+              <resolution>1</resolution>
+              <min_angle>${-horizontal_fov/2.0}</min_angle>
+              <max_angle>${horizontal_fov/2.0}</max_angle>
+            </horizontal>
+            <!-- Explicit single-ray vertical FOV. Left implicit originally; made explicit
+                 while diagnosing a self-detection artifact (see nvis_3302ard.xacro's
+                 lidar_standoff comment) to rule out an unintended default vertical spread. -->
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0.0</min_angle>
+              <max_angle>0.0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>${range_min}</min>
+            <max>${range_max}</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>${range_noise_stddev}</stddev>
+          </noise>
+        </lidar>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+      </sensor>
+    </gazebo>
+
+  </xacro:macro>
+</robot>

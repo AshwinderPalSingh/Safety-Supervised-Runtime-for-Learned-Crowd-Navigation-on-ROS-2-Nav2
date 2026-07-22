@@ -1,0 +1,190 @@
+<?xml version="1.0"?>
+<robot name="nvis_3302ard" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find crowd_nav_description)/urdf/lidar.xacro"/>
+  <xacro:include filename="$(find crowd_nav_control)/urdf/nvis_3302ard.ros2_control.xacro"/>
+
+  <!-- ================= Physical properties ================= -->
+  <!-- CONFIRMED from Nvis 3302ARD datasheet -->
+  <xacro:property name="chassis_length" value="0.190"/>
+  <xacro:property name="chassis_width"  value="0.190"/>
+  <xacro:property name="chassis_height" value="0.080"/>
+  <xacro:property name="total_mass"     value="1.0"/>
+
+  <!-- [PENDING] ESTIMATES, to be replaced with measured values. See MEASUREMENTS.md. -->
+  <xacro:property name="wheel_radius"     value="0.0325"/> <!-- [PENDING] -->
+  <xacro:property name="wheel_width"      value="0.026"/>  <!-- [PENDING] -->
+  <xacro:property name="wheel_separation" value="0.180"/>  <!-- [PENDING] -->
+  <xacro:property name="caster_offset_x"  value="-0.070"/> <!-- [PENDING] -->
+
+  <!-- [PENDING] additional estimates not in the datasheet, needed to complete the model but
+       not called out explicitly in the brief's property list. See MEASUREMENTS.md. -->
+  <xacro:property name="caster_radius" value="0.012"/> <!-- [PENDING]: caster wheel/ball radius -->
+  <xacro:property name="chassis_ground_clearance" value="0.005"/> <!-- [PENDING]: gap between
+       chassis underside and the wheel-ground contact plane -->
+
+  <!-- Mass split across links. total_mass is CONFIRMED (1.0 kg); this split is a reasonable
+       engineering assumption pending a per-link measurement (MEASUREMENTS.md) - the wheels
+       and caster are metal-geared/small and a modest fraction of the total is a safe
+       approximation for inertia purposes on a robot this size. -->
+  <xacro:property name="wheel_mass"  value="0.05"/>  <!-- [PENDING], each wheel -->
+  <xacro:property name="caster_mass" value="0.02"/>  <!-- [PENDING] -->
+  <xacro:property name="chassis_mass" value="${total_mass - 2*wheel_mass - caster_mass}"/>
+
+  <!-- Wheel axle height above the ground/base_footprint plane. Derived from wheel_radius
+       (itself [PENDING]), not an independent measurement. -->
+  <xacro:property name="axle_z" value="${wheel_radius}"/>
+  <!-- Chassis box is centered above the axle by however much clearance sits below it. -->
+  <xacro:property name="chassis_z" value="${axle_z + chassis_height/2.0 - chassis_ground_clearance}"/>
+
+  <!-- LiDAR mount: centered on the chassis, on top, on a standoff. Standoff height is
+       [PENDING] (depends on the actual mounting bracket). Default raised to 0.03 m (from an
+       initial 0.005 m) after spawning in Gazebo showed the horizontal scan plane grazing the
+       flat chassis top at near-tangent incidence, self-detecting it across a wide smoothly-
+       varying angular arc (0.2 m near-perpendicular up to several metres at grazing angles) -
+       confirmed empirically, not assumed. 0.03 m gives genuine clearance over the 0.19 m
+       chassis top; real LiDAR mounts on small robots need this kind of clearance for the
+       same reason. -->
+  <xacro:property name="lidar_standoff" value="0.03"/> <!-- [PENDING], see comment above -->
+  <!-- Empirical note (2026-07-22): a ~176deg self-detection artifact was investigated at
+       length here (standoff 0.005/0.03/0.08 all tested) and root-caused to the gpu_lidar
+       sensor's own rear-hemisphere rendering, NOT robot geometry - rotating the sensor's yaw
+       180deg moved the artifact with it (sensor-frame-relative, not world-frame-relative),
+       and no amount of standoff height changed that. This is a gz-sim/ogre2 rendering
+       limitation on this Fortress install, not a modeling error; a CPU "lidar" sensor type
+       was tried as an alternative and found completely non-functional on this install (no
+       gz-transport topic at all). Settled back on a modest, physically-defensible 0.03 m
+       standoff (raising it further doesn't help, since the cause isn't clearance) - full
+       diagnostic trail in docs/phase1-findings.md. This is an OPEN ISSUE to resolve before
+       Phase 2 (Nav2/costmap) can produce meaningful results with a full 360deg scan. -->
+
+
+  <material name="chassis_grey">
+    <color rgba="0.6 0.6 0.6 1.0"/>
+  </material>
+  <material name="dark_grey">
+    <color rgba="0.2 0.2 0.2 1.0"/>
+  </material>
+
+  <!-- ================= base_footprint / base_link ================= -->
+  <!-- Nav2 convention: base_footprint is the ground-projected reference frame; base_link is
+       the physical chassis frame, offset up to axle height. -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${axle_z}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 ${chassis_z - axle_z}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <material name="chassis_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${chassis_z - axle_z}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 ${chassis_z - axle_z}" rpy="0 0 0"/>
+      <mass value="${chassis_mass}"/>
+      <!-- Computed from mass + geometry (box inertia), not a magic number. -->
+      <inertia
+        ixx="${chassis_mass/12.0*(chassis_width*chassis_width + chassis_height*chassis_height)}" ixy="0" ixz="0"
+        iyy="${chassis_mass/12.0*(chassis_length*chassis_length + chassis_height*chassis_height)}" iyz="0"
+        izz="${chassis_mass/12.0*(chassis_length*chassis_length + chassis_width*chassis_width)}"/>
+    </inertial>
+  </link>
+
+  <!-- ================= Wheels ================= -->
+  <xacro:macro name="wheel" params="prefix reflect">
+    <link name="${prefix}_wheel">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2.0} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="dark_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2.0} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${wheel_mass}"/>
+        <!-- Solid-cylinder inertia, axis along the wheel's rotation axis (Y after the 90 deg
+             visual/collision rotation above), computed from mass + geometry. -->
+        <inertia
+          ixx="${wheel_mass/12.0*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)}" ixy="0" ixz="0"
+          iyy="${wheel_mass/2.0*wheel_radius*wheel_radius}" iyz="0"
+          izz="${wheel_mass/12.0*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)}"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${prefix}_wheel"/>
+      <origin xyz="0 ${reflect * wheel_separation/2.0} ${axle_z - chassis_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:wheel prefix="left" reflect="1"/>
+  <xacro:wheel prefix="right" reflect="-1"/>
+
+  <!-- ================= Caster (simple sphere, standard simplification) ================= -->
+  <link name="caster_wheel">
+    <visual>
+      <geometry>
+        <sphere radius="${caster_radius}"/>
+      </geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <geometry>
+        <sphere radius="${caster_radius}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${caster_mass}"/>
+      <inertia
+        ixx="${2.0/5.0*caster_mass*caster_radius*caster_radius}" ixy="0" ixz="0"
+        iyy="${2.0/5.0*caster_mass*caster_radius*caster_radius}" iyz="0"
+        izz="${2.0/5.0*caster_mass*caster_radius*caster_radius}"/>
+    </inertial>
+  </link>
+
+  <joint name="caster_wheel_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="caster_wheel"/>
+    <origin xyz="${caster_offset_x} 0 ${axle_z - chassis_z + wheel_radius - caster_radius}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ================= LiDAR ================= -->
+  <xacro:crowd_nav_lidar
+    parent_link="base_link"
+    xyz="0 0 ${chassis_z - axle_z + chassis_height/2.0 + lidar_standoff}"
+    rpy="0 0 0"/>
+
+  <!-- ================= ros2_control hardware interface (swap point) ================= -->
+  <xacro:nvis_3302ard_ros2_control/>
+
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(find crowd_nav_control)/config/diff_drive_controller.yaml</parameters>
+    </plugin>
+  </gazebo>
+
+  <gazebo reference="base_link">
+    <material>Gazebo/Grey</material>
+  </gazebo>
+
+</robot>

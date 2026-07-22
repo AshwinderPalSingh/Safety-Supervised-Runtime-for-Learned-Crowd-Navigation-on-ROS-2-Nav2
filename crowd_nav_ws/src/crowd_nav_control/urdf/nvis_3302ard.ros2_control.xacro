@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Hardware boundary (IMPLEMENTATION_PLAN.md S4.5): today this points at the Gazebo
+       simulation plugin. A future ESP32 hardware_interface::SystemInterface plugin drops in
+       by changing ONLY hardware_plugin below - the joint/command/state interface names and
+       types, diff_drive_controller config, and everything above this file are unchanged. -->
+  <xacro:macro name="nvis_3302ard_ros2_control" params="hardware_plugin:='gz_ros2_control/GazeboSimSystem'">
+    <ros2_control name="nvis_3302ard_system" type="system">
+      <hardware>
+        <plugin>${hardware_plugin}</plugin>
+      </hardware>
+      <joint name="left_wheel_joint">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="right_wheel_joint">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+    </ros2_control>
+  </xacro:macro>
+</robot>

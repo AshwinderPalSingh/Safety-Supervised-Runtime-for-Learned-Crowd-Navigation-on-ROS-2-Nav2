@@ -1,0 +1,56 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100 # Hz - well above Nav2's 20 Hz controller tick and the 4 Hz policy rate
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    diff_drive_base_controller:
+      type: diff_drive_controller/DiffDriveController
+
+diff_drive_base_controller:
+  ros__parameters:
+    left_wheel_names: ["left_wheel_joint"]
+    right_wheel_names: ["right_wheel_joint"]
+
+    # Must match crowd_nav_description/urdf/nvis_3302ard.xacro's wheel_separation/wheel_radius
+    # ([PENDING] values, see MEASUREMENTS.md) - not auto-derived from the xacro, update both
+    # together.
+    wheel_separation: 0.180
+    wheel_radius: 0.0325
+
+    wheel_separation_multiplier: 1.0
+    left_wheel_radius_multiplier: 1.0
+    right_wheel_radius_multiplier: 1.0
+
+    publish_rate: 50.0
+    odom_frame_id: odom
+    base_frame_id: base_footprint
+    pose_covariance_diagonal: [0.001, 0.001, 0.0, 0.0, 0.0, 0.01]
+    twist_covariance_diagonal: [0.001, 0.0, 0.0, 0.0, 0.0, 0.01]
+
+    open_loop: false
+    enable_odom_tf: true
+
+    cmd_vel_timeout: 0.5
+    use_stamped_vel: false
+
+    # max_vel_x is the policy-training-matched regime (IMPLEMENTATION_PLAN.md S7 / brief S7):
+    # SARL-family policies were trained around ~1 m/s human-scale motion. The physical
+    # Nvis on its 8.4V pack will manage roughly 0.3 m/s - that's the hardware deviation,
+    # documented in MEASUREMENTS.md, to switch to if/when physical deployment happens.
+    linear.x.has_velocity_limits: true
+    linear.x.has_acceleration_limits: true
+    linear.x.has_jerk_limits: false
+    linear.x.max_velocity: 1.0
+    linear.x.min_velocity: -0.3
+    linear.x.max_acceleration: 1.5
+    linear.x.min_acceleration: -1.5
+
+    angular.z.has_velocity_limits: true
+    angular.z.has_acceleration_limits: true
+    angular.z.has_jerk_limits: false
+    angular.z.max_velocity: 2.0
+    angular.z.min_velocity: -2.0
+    angular.z.max_acceleration: 3.0
+    angular.z.min_acceleration: -3.0

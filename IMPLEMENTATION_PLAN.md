@@ -1,5 +1,5 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.4 (2026-07-21, updated 2026-07-22) — Phase 0 closed
+## Implementation Plan v1.5 (2026-07-21, updated 2026-07-22) — Phase 1 done
 
 No code has been written yet. This document is the deliverable for this pass. It is meant to
 be read once in full, then used as a checklist during the phased build.
@@ -419,13 +419,27 @@ handful of test states); confirm `gz_ros2_control` diff-drive demo runs on this 
 **Done:** world-scale decision made and written up; a validated SARL checkpoint is in hand;
 ONNX round-trip numerically verified against it; diff-drive demo spins in Gazebo.
 
-**Phase 1 — Robot digital twin**
+**Phase 1 — Robot digital twin — DONE, one open issue carried forward**
 `crowd_nav_description` URDF/xacro per §3 of the brief (confirmed geometry + `[PENDING]`
 estimates, computed inertia tensors, LiDAR xacro macro with range/rate/resolution/noise as
 params), `crowd_nav_control` ros2_control block with the hardware-plugin swap point, spawn
-launch in an empty world, keyboard teleop. **Done:** robot drives under teleop, `/scan`
-publishes at the configured rate/range/noise, MEASUREMENTS.md is written and matches every
-`[PENDING]` xacro property.
+launch in an empty world. **Done:** URDF valid (`check_urdf`), robot spawns, hardware
+interface + both controllers activate cleanly, `/scan` publishes at the exact configured
+5 Hz/360°/~1°/8 m spec, robot drives under a velocity command (odometry confirmed:
+`(0,0)` → `(1.44, 0.93)`, yaw rotated, under a combined forward+turn command — interactive
+keyboard teleop itself can't run in this headless environment, so this `cmd_vel` test is the
+equivalent verification of the same control chain). Full diagnostic trail in
+`docs/phase1-findings.md`, including several environment/tooling issues (space-in-path launch
+bugs, a `pkill -f` self-match footgun) hit and fixed along the way.
+
+**Open issue carried into Phase 2, not resolved**: the `gpu_lidar` sensor exhibits a
+~176°-wide self-detection artifact confined to its own rear hemisphere (confirmed
+sensor-frame-relative, not caused by robot geometry — rotating the sensor's yaw 180° moved the
+artifact with it) — a rendering limitation in this gz-sim 6.18.0 install, not a modeling
+mistake. Neither raising the mount standoff (tested 0.005/0.03/0.08 m) nor the alternative
+CPU-raycast `lidar` sensor type (found completely non-functional on this install) fixed it.
+Phase 2 needs to either mask the known-bad sector in software or find an actual renderer-level
+fix before AMCL/costmap work can trust the full 360° scan.
 
 **Phase 2 — Baseline Nav2 (MPPI) + AMCL + SLAM toolbox**
 Stock Nav2 with `nav2_mppi_controller`, AMCL against a saved map, `slam_toolbox` online
@@ -727,7 +741,12 @@ hardware layer is unchanged. Nothing beyond this contract is built now.
    dissolves if the world-scale fallback in §1.1 lands on a compact custom world (8 m comfortably
    covers a small floor plan); only a live risk if tugbot_depot ends up used at native scale
    for the actual evaluation, which is precisely what §1.1's decision tree tries to avoid.
-8. **No trained SARL checkpoint upstream** (§1.8) — mitigated by using
+8. **`gpu_lidar` rear-hemisphere self-detection artifact** (Phase 1, `docs/phase1-findings.md`)
+   — confirmed sensor-rendering-internal, not a modeling bug, and not fixed by standoff height
+   or switching sensor type. Fallback: mask the known-bad ~176° sector in the observation/
+   perception layer (a software workaround, not a real fix) if no renderer-level solution turns
+   up during Phase 2. Real risk to AMCL/costmap quality if left unaddressed.
+9. **No trained SARL checkpoint upstream** (§1.8) — mitigated by using
    `tkkim-robot/Gazebo-CrowdNav`'s matching-config pretrained checkpoint instead of training
    from scratch. Fallback if it doesn't validate in Phase 0: train from scratch using
    upstream `vita-epfl/CrowdNav`'s own `train.config` (3,000 IL + 10,000 RL episodes), run as
