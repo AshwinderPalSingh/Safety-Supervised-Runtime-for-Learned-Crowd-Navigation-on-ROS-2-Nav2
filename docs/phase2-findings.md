@@ -366,6 +366,54 @@ continuous ground-truth monitoring throughout (not just trusting "no errors prin
 successes, first attempt, both modes, with independent ground-truth verification (not just
 odometry) that the robot was never physically compromised during either run.
 
+## Transferable lesson: unobservable state presents as an inexplicable downstream symptom
+
+The reason the ghost obstacle and the overshoot took this long to root-cause is not that the
+bug was subtle - a 33 degree tip is not subtle - it's that **odometry cannot observe pitch on
+a diff-drive base.** `diff_drive_controller`'s odometry model integrates wheel rotation under
+a flat-ground, no-slip assumption; it has no state variable for chassis attitude, so a tipped
+robot's odometry looks exactly like a normal robot's odometry that happens to be in the wrong
+place. Every signal this session was watching *before* the ground-truth cross-check (odometry,
+the SLAM map, the AMCL pose estimate, the `NavigateToPose` result) is downstream of that same
+blind spot, so all of them independently looked like *different, unrelated* problems - a map
+artifact, a localization overshoot, a controller failure - when they were one problem, once
+looked at through a channel that could actually see it.
+
+The generalizable version, worth remembering the next time something "makes no sense" in this
+project: **before spending more time reasoning about a symptom, ask what the signals you're
+already watching are structurally incapable of showing you, and go get a signal that isn't
+limited that way.** Ground truth (`ign topic -e -t /world/<world>/pose/info`, full
+position+orientation, not just the position half of it) is one such channel here; the point
+generalizes past this specific case - a perception pipeline that can't see through occlusion
+will produce "unexplained" tracking loss, an evaluation metric that only logs collisions will
+produce "unexplained" near-misses, and so on. The blind spot is the thing to name, not just
+patch around.
+
+## Stated principle: don't reimplement what the Nav2 stack already does better
+
+The double-mapped SLAM artifact happened because the mapping sweep was a hand-rolled
+`cmd_vel`-publishing script - open-loop, duration-calibrated, with no obstacle-aware planning
+and no principled handling of turn dynamics - standing in for what `NavigateToPose` +
+MPPI + the costmap-based planner already do as their actual job. The failure that exposed this
+(fast in-place spins losing scan-matcher tracking under the narrowed LiDAR FOV) is exactly the
+kind of interaction a hand-rolled script has no way to account for, because it isn't reasoning
+about the sensor or the map at all - it's just replaying a fixed motion profile and hoping.
+Switching the mapping sweep to `NavigateToPose` waypoint goals didn't just fix that one bug; it
+removed an entire category of calibration bugs (turn-duration overshoot under the then-active
+acceleration limits, odom-frame/world-frame mixups in hand-computed waypoints) that the
+hand-rolled approach had been quietly generating on top of the tip-over.
+
+**The principle, stated plainly: if the stack already provides a capability, use it - don't
+re-derive a weaker version of it by hand, even for "just testing" purposes.** This is going to
+matter concretely in **Phase 9 (safety supervisor)**: the temptation there will be to write a
+custom forward-simulation/collision-check loop from scratch. Prefer reusing Nav2's own
+collision-checking primitives (the costmap's cost lookup, `nav2_costmap_2d`'s footprint
+collision checker, MPPI's own `ObstaclesCritic` logic as a reference) wherever they cover the
+need, and reserve genuinely custom code for the parts that are actually novel to the safety
+supervisor's job (the OOD detector, the intervention-logging/fallback decision itself) - not
+for re-solving "is this position in collision," which Nav2 already solves and already has
+had its edge cases found.
+
 ## Summary of everything fixed this session, for anyone extending this model
 
 - `nvis_3302ard.xacro`: wheel joint z-offset (was `${axle_z - chassis_z}`, now `0`); caster

@@ -582,6 +582,16 @@ from `dummy` to `sarl` requires zero code changes and produces visibly SARL-like
 (yielding, path curvature) instead of the dummy heuristic.
 
 **Phase 9 — Safety supervisor**
+**Principle carried forward from Phase 2** (`docs/phase2-findings.md`, "don't reimplement what
+the Nav2 stack already does better"): the forward-simulation/collision-check loop below should
+reuse Nav2's own collision-checking primitives (costmap cost lookup, `nav2_costmap_2d`'s
+footprint collision checker, MPPI's `ObstaclesCritic` as a reference) rather than a from-scratch
+trajectory rollout — a hand-rolled version found real, hard-to-predict interaction bugs in
+Phase 2 (mapping sweep × narrow LiDAR FOV × scan matching) that reusing the stack's own,
+already-hardened logic would have avoided. Reserve genuinely custom code for what's actually
+novel here — the OOD detector and the intervention-logging/fallback decision — not for
+re-solving "is this position in collision."
+
 Forward-simulation of commanded velocity, costmap + active-keep-out-zone check, OOD detector
 (§4.4 defines concrete criteria — see below, this needed sharpening per the brief's own
 prompt), fallback to MPPI or controlled stop, per-cause intervention logging. **Done:** an
