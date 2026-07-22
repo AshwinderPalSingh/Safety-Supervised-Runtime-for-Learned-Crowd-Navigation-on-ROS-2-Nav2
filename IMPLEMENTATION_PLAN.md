@@ -1,5 +1,5 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.8 (2026-07-21, updated 2026-07-22) — Phase 4 done
+## Implementation Plan v1.9 (2026-07-21, updated 2026-07-22) — Phase 4 done, Phase 5 rescoped
 
 This document is the living plan for the project, updated as each phase lands rather than
 frozen at the start. Phases 0–4 are done as of this revision (§3 has current status per
@@ -122,6 +122,29 @@ direct topic subscription without a bridge), and the right ground-truth-pose mec
 (Gazebo's per-model `PosePublisher` system plugin) was confirmed by checking what's actually
 installed and testing its output topic/type directly, rather than assuming a topic name or
 message shape from memory - the same discipline as the LoadMap.srv finding in v1.7.
+
+**v1.9 changes (2026-07-22)**: Phase 5 rescoped before implementation, per review, in three
+concrete ways (§4.1.1, §4.1.2, §4.2 above have the full detail):
+1. The observation builder's schema is now pinned to the actual reference implementation
+   (`tkkim-robot/Gazebo-CrowdNav`, commit `9cad128d124f86bafe48d2cd11b5eee74bec77d9` - cloned
+   and read directly, not assumed) rather than left as "a documented schema" with the document
+   not yet written. Found along the way: the reference training code has **no fixed-size
+   padding at all** - that's this project's own addition for a static-shape ONNX export, not
+   something to reverse-engineer from upstream.
+2. The degradation model's noise/dropout RNG now requires its own substream, independent of
+   Phase 4's pedestrian-motion RNG - both seeded from the same scenario seed, but sharing one
+   stream would let a noise-parameter sweep silently perturb pedestrian trajectories too,
+   turning a controlled experiment into an uncontrolled one.
+3. The latency ring buffer must be derived from (or keyed to) sim time, not a hardcoded tick
+   count - otherwise the effective latency in seconds silently changes if the observation
+   builder's own tick rate ever does.
+
+Phase 5's done-bar gained a fourth item: an observation-builder round-trip test against the
+reference implementation's own `CADRL.rotate()`, not just a hand-computed expected-value unit
+test - the same class of check Phase 8's `SarlAdapter` verification already commits to, moved
+one phase earlier since it's the highest-leverage place in this project for a silent bug (a
+wrong human ordering or off-by-one padding produces a policy that behaves plausibly but
+wrongly, with nothing downstream able to flag it).
 
 ---
 
@@ -668,14 +691,31 @@ never authoritative, never read by anything downstream. Full trail: `docs/phase4
   real measurement, not an assumption, worth re-checking if pedestrian count scales up a lot
   later.
 
-**Phase 5 — HumanStateSource, perception degradation, observation builder**
+**Phase 5 — HumanStateSource, perception degradation, observation builder (rescoped v1.9)**
 `GroundTruthHumanSource` wrapping the Phase 4 topic, degradation model (Gaussian
 position/velocity noise, dropout, latency, max-range, costmap-based occlusion check —
 occlusion is the one sub-feature I'd cut first under time pressure, see §6),
 `TrackedHumanSource` stub, observation builder producing SARL's flat padded vector with a
-documented schema (human ordering, padding, frame, units). **Done:** unit tests
-(fixed input → known output vector) green; a manual degradation sweep (e.g. dropout=0.3 over
-1000 synthetic ticks) produces the expected missing-detection rate within sampling noise.
+schema now pinned to the actual reference implementation, not just documented in the abstract
+(§4.1.1 - human ordering, padding as this project's own addition not upstream's, frame, units,
+exact field layout verified against `tkkim-robot/Gazebo-CrowdNav`).
+
+**Done:**
+- Unit tests (fixed input → known output vector) green.
+- **Round-trip verified against the reference implementation, not just hand-computed
+  expectations** (§4.1.2): a synthetic robot+human state fed through this project's observation
+  builder and independently through the reference repo's own `CADRL.rotate()` produces matching
+  rotated output - catches "misunderstood the schema" bugs a hand-written expected-value test
+  can't, since a wrong human ordering or off-by-one in padding would otherwise produce a policy
+  that behaves plausibly but wrongly with nothing downstream flagging it.
+- A manual degradation sweep (e.g. dropout=0.3 over 1000 synthetic ticks) produces the expected
+  missing-detection rate within sampling noise, **with the pedestrian trajectories themselves
+  identical across every point in the sweep** (§4.2's RNG-substream separation) - confirms the
+  sweep is actually isolating perception noise, not accidentally also varying where the humans
+  walked.
+- Degradation latency's ring buffer is verified against sim time, not assumed correct from a
+  hardcoded tick count (§4.2) - if the observation builder's tick rate ever changes, the
+  effective latency in seconds must not silently change with it.
 
 **Phase 6 — Synthetic adapter + ONNX plumbing validation**
 Added after review: starting the policy-integration work directly with SARL bundles two
@@ -823,6 +863,60 @@ public:
 - `TrackedHumanSource`: constructor takes a tracker topic name; `getHumans()` is a documented
   stub (throws `NotImplementedYet` with a clear message) — this is intentionally thin per §6.
 
+### 4.1.1 Observation builder schema — verified against the actual reference implementation
+
+**Added in v1.9, before implementation, per review**: the original plan asserted the
+observation builder produces "SARL's flat padded vector with a documented schema" without the
+schema actually being pinned down against real source. Fixed by cloning
+`tkkim-robot/Gazebo-CrowdNav` (commit `9cad128d124f86bafe48d2cd11b5eee74bec77d9`, matching the
+checkpoint's source repo) and reading `crowd_nav/policy/cadrl.py`/`multi_human_rl.py`/
+`crowd_sim/envs/utils/state.py` directly, rather than assuming a schema and hoping Phase 8
+reconciles it later.
+
+**What's actually verified, concretely:**
+- `FullState` (self/robot): 9 raw fields, in this exact order —
+  `px, py, vx, vy, radius, gx, gy, v_pref, theta`.
+- `ObservableState` (each human): 5 raw fields — `px, py, vx, vy, radius`.
+- The network's actual input is **not fixed-size/padded at all** in the reference training
+  code — the batch dimension is literally the number of humans present that tick, handled by
+  `SARL.ValueNetwork.forward`'s attention pooling over however many rows exist. **Padding to a
+  fixed max-human-count is this project's own addition**, needed because our target is a
+  static-shape ONNX export, not a training-time variable-length batch — it is not something to
+  reverse-engineer from the reference repo, because the reference repo doesn't do it. Document
+  it as our own design choice, not attribute it to upstream.
+- `CADRL.rotate(state)` (used unchanged by SARL) is the one piece with an exact, unambiguous
+  reference: given a batch of concatenated `(self_state + one_human_state)` rows (14 columns:
+  `px,py,vx,vy,radius,gx,gy,v_pref,theta,px1,py1,vx1,vy1,radius1`), it produces the 13-column
+  egocentric feature row `[dg, v_pref, theta, radius, vx, vy, px1, py1, vx1, vy1, radius1, da,
+  radius_sum]` via a fixed rotation onto the robot-to-goal heading — see `cadrl.py` lines
+  187-222 for the exact formula (goal distance `dg`, ego-rotated self velocity, ego-rotated
+  relative human position/velocity, distance-to-human `da`, summed radii). This function is
+  what the round-trip test (§4.1.2 below, Phase 5's done-bar) checks our raw field construction
+  against - not the fork's own environment/FOV-simulation code in `state.py`, which is
+  training-environment perception simulation specific to that fork, not part of the policy's
+  own observation contract.
+- Robot `v_pref`/`theta`: `v_pref` is a **config parameter matching the training distribution**
+  (not measured from the real robot — same category of number as `policy_radius`, §4.3/§7),
+  `theta` is the robot's actual current heading (`atan2(vy, vx)` per `JointState.__init__`,
+  or the robot's real orientation if directly available - equivalent for a robot actually
+  moving in its heading direction).
+
+### 4.1.2 Round-trip verification against the reference implementation (Phase 5 done-bar)
+
+**Added in v1.9, per review**: a fixed-input/hand-computed-expected-output unit test (the
+original plan's only check) catches transcription errors, but the expected values in that test
+are ones a person wrote by hand - it can't catch "I misunderstood the schema" bugs, which are
+exactly the class of bug most likely here and least likely to be caught by anything downstream
+(a wrong human ordering or an off-by-one in padding produces a policy that behaves plausibly
+but wrongly, silently). The done-bar therefore requires, in addition to the hand-computed unit
+tests: feed an identical synthetic robot+human state through (a) this project's observation
+builder, through to the raw (pre-padding) field vector, and (b) the reference repo's own
+`CADRL.rotate()` called directly on the equivalent raw vector constructed the same way in
+Python - assert the two rotated outputs match to floating-point tolerance. This is checked
+against the actual reference implementation, not against this project's own understanding of
+it - the same class of check Phase 8's `SarlAdapter` verification (§3) already commits to, done
+one phase earlier where it's cheaper to fix if the schema understanding is wrong.
+
 ### 4.2 Perception degradation model
 
 Applied per-human, per-tick, inside `GroundTruthHumanSource`, all defaulting to zero (oracle
@@ -839,11 +933,34 @@ struct DegradationParams {
 };
 ```
 
-- Noise: seeded Gaussian draw per human per tick, seed threaded through from the scenario
-  seed for reproducibility.
-- Dropout: seeded Bernoulli draw per human per tick.
-- Latency: implemented as a fixed-length ring buffer of true states per human (not an async
-  delay), so replaying the same seed reproduces the same degraded sequence exactly.
+- **Noise/dropout RNG uses its own substream, separate from Phase 4's pedestrian-motion RNG**
+  (added in v1.9, per review) - both are ultimately seeded from the same scenario seed, but if
+  they drew from one shared stream, changing a noise parameter (e.g. sweeping `sigma_pos_m`)
+  would consume a different number of random draws and shift *which* random numbers the
+  pedestrian motion model sees too - silently changing where the humans walk at every noise
+  level. That turns a noise sweep into an uncontrolled experiment (humans on different paths
+  at each setting, not just differently-perceived), and the effect would be subtle enough to
+  survive to Phase 10's results without anyone noticing the sweep wasn't isolating what it
+  claimed to. Fixed by deriving two independent substreams from the one scenario seed (e.g.
+  `std::seed_seq{scenario_seed, 0}` for pedestrian motion, `std::seed_seq{scenario_seed, 1}`
+  for degradation noise/dropout - any equivalent independent-substream derivation is fine, the
+  requirement is that changing degradation params cannot perturb the pedestrian RNG's own draw
+  sequence, and vice versa).
+- Noise: seeded Gaussian draw per human per tick, from the degradation substream above.
+- Dropout: seeded Bernoulli draw per human per tick, same substream as noise (dropout and noise
+  are both "degradation," and don't need mutual isolation from each other - only from the
+  pedestrian-motion stream).
+- **Latency ring buffer sized and verified against sim time, not a raw tick count** (added in
+  v1.9, per review): `latency_s` is a duration, but a ring buffer's natural size is a count of
+  slots. If the buffer length is a hardcoded tick count and the observation builder's own tick
+  rate ever changes, the *effective* latency silently changes with it - the buffer would still
+  compile and run, just be quietly wrong. Fixed by deriving `buffer_length_ticks` from
+  `latency_s / tick_period_s` at configuration time (not hardcoding it) and asserting the
+  division is exact (or documenting and rounding deliberately, not silently) - alternatively,
+  keying the buffer to stored sim timestamps directly (each slot carries its own stamp; "the
+  degraded state" is whichever slot's stamp is `>= now - latency_s`) removes the tick-rate
+  coupling entirely and is the more robust of the two options if the extra bookkeeping is
+  cheap, which it is here.
 - Max-range / occlusion: cheap 2D checks (Euclidean distance; line-of-sight raycast against
   the static costmap) — occlusion is the one piece I'd cut first if time runs short, per the
   brief's own "optional" framing of it.
