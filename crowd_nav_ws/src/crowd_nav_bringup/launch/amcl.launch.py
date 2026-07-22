@@ -28,6 +28,14 @@ def generate_launch_description():
         ],
     )
 
+    zones = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+                FindPackageShare('crowd_nav_zones'), 'launch', 'zones.launch.py',
+            ])
+        ),
+    )
+
     nav2_params = PathJoinSubstitution([
         FindPackageShare('crowd_nav_bringup'), 'config', 'nav2_params.yaml',
     ])
@@ -85,6 +93,7 @@ def generate_launch_description():
     return LaunchDescription([
         map_arg,
         spawn,
+        zones,
         map_server,
         amcl,
         controller_server,

@@ -193,7 +193,17 @@ local_costmap:
       resolution: 0.03
       # Must match robot_collision_radius in crowd_nav_description/urdf/nvis_3302ard.xacro (single source of truth, diagonal-based - IMPLEMENTATION_PLAN.md S4.3). Update both together.
       robot_radius: 0.14
-      plugins: ["obstacle_layer", "inflation_layer"]
+      # keepout_filter (Phase 3, IMPLEMENTATION_PLAN.md): stock nav2_costmap_2d::KeepoutFilter,
+      # fed by crowd_nav_zones' zone_manager node via costmap_filter_info_server + a dedicated
+      # map_server instance (crowd_nav_zones/launch/zones.launch.py) - no custom collision
+      # logic here, this plugin and its mask pipeline are entirely stock Nav2. Local costmap
+      # only, per the phase's own done-bar (matches this project's existing global-costmap
+      # design choice above of keeping global static-only).
+      plugins: ["obstacle_layer", "inflation_layer", "keepout_filter"]
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: /costmap_filter_info
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
@@ -234,7 +244,21 @@ global_costmap:
       # Static-map-only global costmap (no dynamic obstacle_layer here) is deliberate, not an
       # oversight: it sidesteps the same rear-blind-spot problem entirely at the global level
       # by never marking dynamic scan returns onto a costmap that never rolls/resets.
-      plugins: ["static_layer", "inflation_layer"]
+      #
+      # keepout_filter here too, NOT just the local costmap (Phase 3, IMPLEMENTATION_PLAN.md):
+      # the phase's original plan text said "local costmap" only, but testing the actual
+      # done-bar ("a zone blocks a corridor and MPPI visibly replans") found that local-only
+      # doesn't work - NavFn (this costmap's planner) has no idea a zone exists, so it keeps
+      # handing MPPI the same path straight through it. MPPI correctly refuses to violate the
+      # keepout, "Failed to make progress" fires, a recovery spin runs, and the SAME broken
+      # global plan gets computed again - an infinite loop, not a replan, confirmed via
+      # ground-truth trajectory logging showing the robot genuinely stuck (not just slow) at
+      # the zone boundary. Global awareness is required for an actual detour to exist.
+      plugins: ["static_layer", "inflation_layer", "keepout_filter"]
+      keepout_filter:
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: /costmap_filter_info
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: true

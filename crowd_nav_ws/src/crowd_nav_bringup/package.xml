@@ -13,6 +13,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <exec_depend>crowd_nav_gazebo</exec_depend>
+  <exec_depend>crowd_nav_zones</exec_depend>
   <exec_depend>nav2_amcl</exec_depend>
   <exec_depend>nav2_map_server</exec_depend>
   <exec_depend>nav2_controller</exec_depend>

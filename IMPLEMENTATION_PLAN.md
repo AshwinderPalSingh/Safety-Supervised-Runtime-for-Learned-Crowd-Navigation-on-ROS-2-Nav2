@@ -519,11 +519,28 @@ FOV means the local costmap won't clear obstacles behind the robot as it passes 
 persist until they age out) — `obstacle_layer` raytracing and decay parameters need to account
 for this, and reversing recoveries should be treated as less safe as a result.
 
-**Phase 3 — Dynamic keep-out zones**
-Zone-manager node (mask generator + republisher + `AddZone`/`RemoveZone` service),
-`costmap_filter_info_server` + `map_server` instance for the mask, stock `KeepoutFilter` in
-the local costmap. **Done:** a zone added mid-run blocks a corridor and MPPI visibly replans;
-removing it opens the path back up.
+**Phase 3 — Dynamic keep-out zones — DONE, done-bar met**
+`crowd_nav_zones` package: zone-manager node (mask generator + `AddZone`/`RemoveZone`
+services, backed by a real `map_server` instance reloaded via its stock `LoadMap` service, not
+a hand-rolled publisher — see `docs/phase2-findings.md`'s "don't reimplement the stack"),
+`costmap_filter_info_server` + that `map_server` instance for the mask, stock `KeepoutFilter`.
+**Done, verified with real evidence, not just presence at launch**: a zone added mid-navigation
+genuinely blocked the corridor (confirmed via ground-truth trajectory, not just the mask
+topic), the robot found and executed an actual detour (`Reached the goal!` / `Goal succeeded`
+in the logs — not a stall reported as success), and removing the zone let a fresh goal through
+the same corridor directly (20.7s vs 150s+ with the detour). Full trail, including one
+deviation from this phase's own original text, in `docs/phase3-findings.md`.
+
+**Deviation from the plan worth flagging explicitly**: the first real test (not just checking
+the mask exists) found that `KeepoutFilter` in the local costmap *alone* — as originally
+planned above — doesn't satisfy this phase's own done-bar. The global costmap/planner had no
+knowledge of the zone, so it kept handing MPPI the same blocked path, producing an infinite
+recovery loop (`Failed to make progress`, repeating) rather than a replan. Fixed by adding
+`KeepoutFilter` to the global costmap too — necessary for "MPPI visibly replans" to be true in
+any meaningful sense, not scope creep for its own sake. Also found and fixed: a stock Nav2
+message's own doc comment (`LoadMap.srv`'s `map_url` field) describing a `file://` URI form
+that this build actually rejects — verify against the real service, not the docstring, even
+for code that isn't this project's own.
 
 **Phase 4 — Pedestrian simulation**
 HuNav reactive integration (`regular` behavior) + custom non-reactive scripted-actor node,
