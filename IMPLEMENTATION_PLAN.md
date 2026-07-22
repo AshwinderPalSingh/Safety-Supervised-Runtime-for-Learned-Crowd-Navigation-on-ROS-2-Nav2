@@ -525,15 +525,15 @@ Everything below lives in one colcon workspace, `crowd_nav_ws/src/`.
 | `crowd_nav_description` | URDF/xacro digital twin (§3), LiDAR xacro macro, MEASUREMENTS.md | No |
 | `crowd_nav_control` | ros2_control YAML, `diff_drive_controller` config, `.ros2_control.xacro` hardware-plugin swap point | No |
 | `crowd_nav_gazebo` | World files (open-arena, tugbot_depot integration, compact depot if needed), spawn launch | No |
-| `crowd_nav_msgs` | `HumanState[]`, `AddZone`/`RemoveZone` srv, `InterventionEvent` msg | No |
+| ~~`crowd_nav_msgs`~~ | **Superseded (v1.9), not built as planned** — `AddZone`/`RemoveZone` ended up defined inside `crowd_nav_zones` (Phase 3) and the ground-truth human-state message (`Pedestrian`/`PedestrianArray`) inside `crowd_nav_pedestrians` (Phase 4), colocated with their producing package rather than centralized. Standard ROS2 practice for a project this size, and it happened without the plan saying so first - correcting here rather than leaving the table wrong. `InterventionEvent` (Phase 9, not yet built) will need a home decided when that phase starts - likely `crowd_nav_safety_supervisor` itself, for the same colocation reason, unless a second consumer emerges first. | — |
 | `crowd_nav_onnxruntime_vendor` | Minimal vendored ONNX Runtime CMake package | No |
-| `crowd_nav_perception` | `HumanStateSource` interface, `GroundTruthHumanSource` (+ degradation model), `TrackedHumanSource` stub | No |
+| `crowd_nav_perception` | `HumanStateSource` interface, `GroundTruthHumanSource` (+ degradation model, consuming `crowd_nav_pedestrians`' `PedestrianArray` via the message-adapter seam in §4.1), `TrackedHumanSource` stub | No |
 | `crowd_nav_observation` | Observation builder library/node, canonical `WorldState` struct | No |
 | `crowd_nav_policy_adapters` | `PolicyAdapter` interface, `SarlAdapter`, ONNX shape-validation helper | Onnxruntime only |
 | `crowd_nav_controller` | `nav2_core::Controller` plugin: rate handling, accel clamping, latency watchdog + failover | Yes (nav2_core) |
 | `crowd_nav_safety_supervisor` | Forward-sim, costmap/keepout check, OOD detector, fallback trigger, intervention logging | Yes (costmap_2d) |
-| `crowd_nav_costmap_filters` | Zone-manager node (mask gen + republish + CRUD service), uses stock `KeepoutFilter` | Yes (map_server/costmap_filters) |
-| `crowd_nav_pedestrians` | HuNav launch/config integration + custom non-reactive scripted-actor node | No (Gazebo/HuNav only) |
+| ~~`crowd_nav_costmap_filters`~~ | **Built as `crowd_nav_zones` instead (Phase 3)** - same responsibility (zone-manager node: mask gen + reload via a real `map_server` instance + `AddZone`/`RemoveZone`, stock `KeepoutFilter`), different name chosen during implementation; correcting the table rather than leaving two names for one package. | Yes (map_server/costmap_2d) |
+| `crowd_nav_pedestrians` | **Rescoped v1.7 - HuNav dropped entirely, see §1.2.** A single deterministic seeded social-force ROS node (`reactive`/`non_reactive` as one config flag), ground-truth robot pose injected via a Gazebo `PosePublisher` plugin (not `/odom`), plus an off-by-default visual-only Gazebo actor mirror node. Built and closed in Phase 4. | No (Gazebo only, no HuNav dependency) |
 | `crowd_nav_evaluation` | Scenario suite, harness runner, metrics collector, CSV + plots | Yes (transitively) |
 | `crowd_nav_bringup` | Top-level launch files tying it all together, baseline MPPI config, AMCL/SLAM launch args | Yes |
 
