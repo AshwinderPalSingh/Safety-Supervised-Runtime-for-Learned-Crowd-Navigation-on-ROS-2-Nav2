@@ -185,6 +185,90 @@ circle-crossing values (`(0,-4)→(0,4)`, `theta=1.57`) before running; noting t
 a real config-schema evolution worth knowing about if any other pre-2020-era CrowdNav configs
 turn up later.
 
+## FINAL DECISION: chosen checkpoint, reasoning, and Phase 0 close-out
+
+**Chosen: `tkkim-robot/Gazebo-CrowdNav`'s `il_model.pth` (imitation-learning checkpoint), not
+either RL-trained option.**
+
+**Why IL over RL, explicitly:** the two working RL options were LeeKeyu's `sarl_star`
+checkpoint (0.72 success / 0.18 collision / 0.10 timeout, unicycle) and — had it validated —
+tkkim's own `rl_model.pth` (which didn't). Against those, tkkim's `il_model.pth` gets
+0.96 / 0.02 / 0.02. For this project specifically, an 18% collision-rate base policy is a bad
+foundation: the entire evaluation design (§5.8 of the brief) depends on being able to tell
+"the supervisor intervened because the policy did something genuinely OOD/unsafe" apart from
+"the supervisor is compensating for a mediocre base policy" — and a policy that collides in
+1 of every ~5.5 in-distribution episodes muddies that distinction badly before OOD scenarios
+are even introduced. A clean, highly-capable in-distribution base policy is a better substrate
+for demonstrating the supervisor adds value at the boundaries, which is the actual point.
+
+**Real cost acknowledged, not hidden:** `il_model.pth` is pure behavior-cloning of ORCA. It
+will not exhibit genuinely RL-refined crowd-interaction timing distinct from the classical
+ORCA baseline it's evaluated against — meaning the `policy_raw`/`policy_supervised` vs.
+`baseline_mppi` comparison's "learned policy" arm will behave closer to its own classical
+comparison point than a fully-converged RL policy would. This is a real limitation of this
+choice, to be stated plainly in the project README, not glossed over. It's also exactly the
+gap Phase 12 (below) exists to eventually close with a policy that has real published RL
+performance (HEIGHT) rather than working around a bad fork checkpoint.
+
+Also kept us inside the same config family already used to derive every §4.4 OOD threshold
+(`discomfort_dist=0.2`, `policy_radius=0.3`, holonomic kinematics, `with_global_state=true`)
+— switching to LeeKeyu's checkpoint would have meant re-deriving those against a different
+architecture (`with_global_state=false`) and kinematics mode, on top of accepting the worse
+collision rate.
+
+**Correction made during this investigation, recorded rather than quietly fixed:** while
+surveying alternatives to SARL, I initially read `Shuijing725/CrowdNav_Prediction_AttnGraph`'s
+shipped test logs (`ORCA_no_rand/test/test_00000.pt.log`: 0.69/0.29 success/collision;
+`SF_no_rand/...`: 0.34/0.64) as evidence of that repo's own learned policy's performance. On
+closer reading of the README, those logs are for the paper's **classical baseline
+comparisons** (ORCA and Social-Force policies, run through their evaluation harness for their
+own paper's comparison table) — not their actual method (`my_model`, which uses PPO + GST
+trajectory prediction). `my_model/` has no test log in the repo at all, only a training
+`progress.csv`. So AttnGraph was never actually validated as a candidate here; I'd initially
+implied it was more promising than it is. Corrected before presenting the final comparison to
+the user.
+
+**HEIGHT — flagged as the Phase 12 starting point, explicitly unvalidated:**
+`Shuijing725/CrowdNav_HEIGHT` (T-ASE 2026, arXiv:2411.12150) is the one candidate found with
+**official author-provided checkpoints**:
+https://drive.google.com/drive/folders/1B1EA_gTMKg3hFQ_PXpQYjA8JBRHgmEQR?usp=drive_link
+(per the repo's README: download, unzip into `trained_models/`). This has not been
+downloaded, loaded, or tested — it's a Google Drive folder, not a direct file/API check like
+everything above, and nothing about it is confirmed beyond "the authors say checkpoints are
+here." Treat it exactly as unverified as tkkim's `rl_model.pth` looked before we actually
+tested it. Repo needs Python 3.8, PyTorch 1.12.1, Python-RVO2 (same library we already built),
+no external physics simulator. This is the designated starting point for Phase 12, not a
+standing recommendation.
+
+**Chosen checkpoint provenance (per the standing ask to record this precisely):**
+- File: `crowd_nav/data_sarl/output/il_model.pth`
+- Source repo: `tkkim-robot/Gazebo-CrowdNav`, commit `9cad128d124f86bafe48d2cd11b5eee74bec77d9`
+  (2021-10-21)
+- SHA256: `4119f954d2cd848076cf5632d8da4a09f96ad293dae00b721b25362e1f7e8aa6`
+- `env.config` (`[env]/[reward]/[sim]/[humans]/[robot]`, full content recorded earlier in this
+  file under "SARL checkpoint validation"): `discomfort_dist=0.2`, `robot.radius=0.3`,
+  `human.radius=0.3`, `human_num=5`, `v_pref=1`, `robot.visible=false`,
+  `randomize_attributes=true`
+- `policy.config` `[sarl]` section: `mlp1_dims=150,100`, `mlp2_dims=100,50`,
+  `attention_dims=100,100,1`, `mlp3_dims=150,100,100,1`, `with_om=false`,
+  `with_global_state=true`; `[action_space]` `kinematics=holonomic`, `speed_samples=5`,
+  `rotation_samples=16`, `sampling=exponential`, `query_env=true`
+- License lineage: MIT (upstream `vita-epfl/CrowdNav`); this specific file sourced from the
+  `tkkim-robot` fork, both credited in the project README per §7 of IMPLEMENTATION_PLAN.md.
+- Validated: 0.96 success / 0.02 collision / 0.02 timeout, n=50, same seeds as the full-500
+  run (deterministic per-index seeding, confirmed in `crowd_sim.py`).
+
+**Phase 0 is closed.** Every item in IMPLEMENTATION_PLAN.md's Phase 0 checklist is resolved:
+world scale (measured, risk downgraded), ONNX Runtime vendor package (built, verified,
+version bumped), SARL checkpoint (chosen, validated, provenance recorded), gz_ros2_control
+(confirmed working headless), holonomic kinematics and headless-rendering risks (found,
+documented for Phase 1/8). See IMPLEMENTATION_PLAN.md for the Phase 12 entry this decision
+feeds into.
+
+---
+
+*(superseded by the FINAL DECISION above — kept for the trail of reasoning that led there)*
+
 **Decision point, raised to the user rather than picked unilaterally:** given tkkim's
 `rl_model.pth` is now reasonably confirmed bad (not a harness artifact), how to get a usable
 SARL checkpoint. Options: (a) use tkkim's own `il_model.pth` directly — already validated at

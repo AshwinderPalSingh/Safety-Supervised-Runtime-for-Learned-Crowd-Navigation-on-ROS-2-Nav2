@@ -1,5 +1,5 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.3 (2026-07-21, updated 2026-07-22)
+## Implementation Plan v1.4 (2026-07-21, updated 2026-07-22) — Phase 0 closed
 
 No code has been written yet. This document is the deliverable for this pass. It is meant to
 be read once in full, then used as a checklist during the phased build.
@@ -33,6 +33,16 @@ Xvfb/EGL, which will hit Phase 1's LiDAR sensor too (§1.10 new). ONNX Runtime v
 1.17.3 → 1.20.1 after the vendor package's own plumbing test caught a real IR-version
 incompatibility (§1.3). `gz_ros2_control` needs `sudo apt install` and this machine has no
 passwordless sudo — blocked, needs you (§3 Phase 0).
+
+**v1.4 changes (Phase 0 closed, 2026-07-22)**: tkkim-robot's `rl_model.pth` failed validation
+(0.21 vs 0.99 reported); root-caused via three differential test runs to that specific file,
+not the harness (§1.8). **Final decision: `il_model.pth`** from the same repo (0.96/0.02/0.02),
+chosen over LeeKeyu's working RL checkpoint (0.72/0.18/0.10) because an 18%-collision-rate
+base policy undermines this project's core "is the supervisor catching genuine OOD behavior"
+evaluation question — full reasoning and provenance in §1.8 and `docs/phase0-findings.md`.
+Added **Phase 12** (second policy integration, HEIGHT) as the explicit reusability proof, not
+a replacement. Corrected a mid-investigation mis-attribution about
+`CrowdNav_Prediction_AttnGraph`'s test logs, recorded rather than silently fixed (§1.8).
 
 ---
 
@@ -284,6 +294,46 @@ differential-drive unicycle. See §1.9 — this is a real, separate finding from
 env.config parameters already used in §4.4, and changes what `SarlAdapter` has to do beyond
 candidate-action search.
 
+**tkkim-robot's `rl_model.pth` (the RL-fine-tuned checkpoint) failed validation** — 0.21
+success rate at n=500, vs. the paper's reported 0.99. Three cheap differential runs (n=50)
+root-caused it: `LeeKeyu/sarl_star`'s independently-trained checkpoint (0.72/0.18/0.10,
+unicycle) and **tkkim's own `il_model.pth`** (0.96/0.02/0.02, identical holonomic/
+with-global-state architecture) both behave normally through the identical harness — ruling
+out a reproduction bug. The problem is specific to that one `rl_model.pth` file (looks like an
+undertrained/interrupted RL run, given tkkim's CADRL checkpoints are numbered training
+snapshots — `rl_model_1000.pth` … `rl_model_10000.pth` — while SARL's folder ships only one
+unnumbered file with no way to confirm convergence).
+
+**FINAL DECISION: `tkkim-robot/Gazebo-CrowdNav`'s `il_model.pth`**, not either RL-trained
+option. An 18%-collision-rate base policy (LeeKeyu's) is a bad foundation for this project
+specifically — §5.8's whole evaluation design depends on distinguishing "supervisor caught a
+genuinely OOD/unsafe command" from "supervisor is compensating for a mediocre base policy,"
+and that distinction is already hard to read with a policy that collides in 1 of ~5.5
+in-distribution episodes before OOD scenarios are even introduced. `il_model.pth`'s
+0.96/0.02/0.02 is a much cleaner substrate for demonstrating the supervisor's value at the
+boundaries, which is the actual point.
+
+**Real cost, stated plainly, not hidden**: `il_model.pth` is pure behavior-cloning of ORCA. It
+will not show genuinely RL-refined crowd-interaction timing distinct from the classical ORCA
+baseline it's evaluated against in §5.8 — the "learned policy" arm will behave closer to its
+own comparison point than a fully-converged RL policy would. State this in the project README
+as a known limitation. This is exactly the gap Phase 12 (§3) exists to eventually close with a
+policy that has real, author-validated RL performance (HEIGHT) instead of a workaround
+checkpoint. Also: this choice stays inside the config family §4.4's OOD thresholds were
+already derived against (holonomic, `with_global_state=true`) — switching to LeeKeyu's
+checkpoint would have meant re-deriving those thresholds against a different architecture on
+top of accepting the worse collision rate. Full provenance (SHA256, commit, exact configs) in
+`docs/phase0-findings.md`.
+
+**A related correction, recorded rather than quietly fixed**: while surveying alternatives to
+SARL (per your question about whether reproducing an old checkpoint was even the right move),
+I initially misread `Shuijing725/CrowdNav_Prediction_AttnGraph`'s shipped test logs as
+evidence of that repo's own learned policy's quality. Those logs
+(`ORCA_no_rand`/`SF_no_rand`) are actually for the paper's **classical baseline comparisons**,
+not their PPO+prediction method (`my_model`, which has no test log at all, only a training
+progress CSV). AttnGraph was never actually validated as a candidate — corrected before
+presenting the final comparison. Full detail in `docs/phase0-findings.md`.
+
 ### 1.9 Holonomic-trained policy, nonholonomic robot — a real gap, not just accel clamping
 
 The brief's §5.5 already flags "handle nonholonomic constraints... clamp to the robot's
@@ -469,6 +519,27 @@ not a correctness check, just a smoke test for launch-file and parameter-schema 
 unit tests structurally can't catch and which is exactly what silently breaks in ROS 2
 workspaces over time. README "how to add a new policy" walkthrough (documented, using HEIGHT
 as the worked example, not implemented). Final MEASUREMENTS.md pass.
+
+**Phase 12 — Second policy integration: HEIGHT**
+This is the reusability proof `PolicyAdapter` was built for, not a replacement for the SARL
+work above. Explicitly out of scope until Phases 1–11 are done and the runtime is proven end
+to end against `SarlAdapter`. Scope: (1) actually validate `Shuijing725/CrowdNav_HEIGHT`'s
+official checkpoint (Google Drive link, §1.8 — currently unverified, treat with the same
+skepticism `tkkim-robot`'s `rl_model.pth` got before it was tested) using the same kind of
+differential-testing discipline Phase 0 used for SARL — don't assume it's good just because
+it's official; (2) write `HeightAdapter` against the heterogeneous spatio-temporal graph
+observation HEIGHT expects (real new work: this is not a flat vector, and won't reuse
+`SarlAdapter`'s candidate-action-search pattern — HEIGHT outputs actions directly via PPO, per
+Phase 0's research, so `selectAction` is simpler than SARL's, but `buildInputs` is harder,
+needing a graph-structured tensor bundle); (3) export to ONNX and validate the same way Phase
+8 validated SARL's export (bit-close match against the original PyTorch model); (4) swap
+`policy_supervised`'s adapter config from `sarl` to `height` and confirm **zero changes** to
+`crowd_nav_controller`, `crowd_nav_safety_supervisor`, the observation-builder interface, or
+the evaluation harness — that's the actual thing being tested here. **Done:** HEIGHT drives
+the robot through the same evaluation scenario suite Phase 10 built, using the same
+`PolicyAdapter` seam, with only a config change and a new adapter file — proving the
+reusability requirement (brief §6) with a second real policy, not just an interface that
+looks reusable on paper.
 
 Hardware (ESP32 `hardware_interface::SystemInterface`) is explicitly out of scope for all of
 the above — the interface boundary in Phase 1 is designed so it drops in later with zero
