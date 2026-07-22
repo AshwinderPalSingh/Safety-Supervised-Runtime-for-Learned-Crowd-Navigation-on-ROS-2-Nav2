@@ -29,10 +29,20 @@ These are **not** in the table above because they aren't properties of the physi
 measure; they're parameters this project chooses:
 
 - **LiDAR range/rate/resolution/noise** (`crowd_nav_description/urdf/lidar.xacro` macro
-  args, defaults: 8 m range, 5 Hz, 360 samples/1°, 0.02 m noise stddev): a deliberately
-  conservative *spec* per the project brief, not a measurement of a specific sensor. If a real
-  LiDAR is chosen later (e.g. an LD14-class unit), update these to match its actual datasheet
-  — at that point it becomes a real measurement/lookup, but right now it's a design choice.
+  args, defaults: 8 m range, 5 Hz, 0.02 m noise stddev): a deliberately conservative *spec*
+  per the project brief, not a measurement of a specific sensor. If a real LiDAR is chosen
+  later (e.g. an LD14-class unit), update these to match its actual datasheet — at that point
+  it becomes a real measurement/lookup, but right now it's a design choice.
+- **LiDAR horizontal FOV — 180° masked, not the original 360° spec**
+  (`crowd_nav_description/urdf/nvis_3302ard.xacro`, `lidar_horizontal_fov`/`lidar_samples`
+  properties): this one is neither a measurement nor a from-scratch design choice — it's a
+  workaround for a confirmed gz-sim rendering bug (see `docs/phase1-findings.md`), masking a
+  ~176°-wide self-detection artifact in the `gpu_lidar` sensor's rear hemisphere. Masked to the
+  front ±90° (180° total), 2° inside the measured ~184° clean arc, `samples` scaled to 180 to
+  hold the ~1°/sample resolution constant. **This is a stated, deliberate limitation, not an
+  accident** — combined with the already-deliberate 8 m range cap, the simulated robot now runs
+  a sensor closer to a real budget 180° LiDAR than the original 360° spec. Restore to `${2*pi}`/
+  `360` samples in one place if a gz-sim version without this bug is ever confirmed.
 - **`max_vel_x` / velocity limits** (`crowd_nav_control/config/diff_drive_controller.yaml`):
   set to 1.0 m/s, the *policy-training-matched* regime (IMPLEMENTATION_PLAN.md §7), not the
   physical robot's real top speed. The physical Nvis on its 8.4 V/3000 mAh pack under-driving

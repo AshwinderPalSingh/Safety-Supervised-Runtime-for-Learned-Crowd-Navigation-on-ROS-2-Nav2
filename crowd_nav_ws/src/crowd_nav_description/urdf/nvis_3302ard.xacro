@@ -50,13 +50,26 @@
        length here (standoff 0.005/0.03/0.08 all tested) and root-caused to the gpu_lidar
        sensor's own rear-hemisphere rendering, NOT robot geometry - rotating the sensor's yaw
        180deg moved the artifact with it (sensor-frame-relative, not world-frame-relative),
-       and no amount of standoff height changed that. This is a gz-sim/ogre2 rendering
-       limitation on this Fortress install, not a modeling error; a CPU "lidar" sensor type
-       was tried as an alternative and found completely non-functional on this install (no
-       gz-transport topic at all). Settled back on a modest, physically-defensible 0.03 m
-       standoff (raising it further doesn't help, since the cause isn't clearance) - full
-       diagnostic trail in docs/phase1-findings.md. This is an OPEN ISSUE to resolve before
-       Phase 2 (Nav2/costmap) can produce meaningful results with a full 360deg scan. -->
+       and no amount of standoff height changed that. Confirmed as a gz-sim 6.18.0 (Fortress)
+       rendering limitation, not a modeling error - see docs/phase1-findings.md for the full
+       diagnostic trail and upstream issue search. A CPU "lidar" sensor type was tried as an
+       alternative and found completely non-functional on this install (no gz-transport topic
+       at all). Settled back on a modest, physically-defensible 0.03 m standoff (raising it
+       further doesn't help, since the cause isn't clearance). -->
+
+  <!-- DECISION (2026-07-22, masking chosen over a downstream filter node - see
+       docs/phase1-findings.md for the reasoning: masking at the source means there is only
+       ever one /scan topic, avoiding the failure mode where one consumer reads the filtered
+       topic and another reads the raw one): masked to the front ~180deg, safely inside the
+       measured ~184deg clean arc (2 deg margin either side). This makes the sensor
+       deliberately pessimistic in field of view on top of the already-deliberate 8 m range
+       cap (S3 of the brief) - closer to a real budget 180deg LiDAR than the original 360deg
+       spec, and that combination should be stated as a known limitation, not an accident.
+       samples scales with the FOV to hold the ~1 deg angular resolution spec (S3) constant.
+       Restore lidar_horizontal_fov to ${2*pi} (and samples to 360) in one place here if a
+       gz-sim version without this rendering bug is ever confirmed. -->
+  <xacro:property name="lidar_horizontal_fov" value="${pi}"/>
+  <xacro:property name="lidar_samples" value="180"/>
 
 
   <material name="chassis_grey">
@@ -172,7 +185,9 @@
   <xacro:crowd_nav_lidar
     parent_link="base_link"
     xyz="0 0 ${chassis_z - axle_z + chassis_height/2.0 + lidar_standoff}"
-    rpy="0 0 0"/>
+    rpy="0 0 0"
+    horizontal_fov="${lidar_horizontal_fov}"
+    samples="${lidar_samples}"/>
 
   <!-- ================= ros2_control hardware interface (swap point) ================= -->
   <xacro:nvis_3302ard_ros2_control/>

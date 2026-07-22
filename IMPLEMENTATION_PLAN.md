@@ -1,8 +1,9 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.5 (2026-07-21, updated 2026-07-22) — Phase 1 done
+## Implementation Plan v1.6 (2026-07-21, updated 2026-07-22) — Phase 1 done, LiDAR masked
 
-No code has been written yet. This document is the deliverable for this pass. It is meant to
-be read once in full, then used as a checklist during the phased build.
+This document is the living plan for the project, updated as each phase lands rather than
+frozen at the start. Phases 0–1 are done as of this revision (§3 has current status per
+phase); everything from Phase 2 onward is still plan, not implementation.
 
 **v1.1 changes** (post-review, same day): inserted a synthetic-adapter phase before SARL to
 decouple runtime-plumbing risk from SARL-search-correctness risk (§3, new Phase 6); confirmed
@@ -43,6 +44,28 @@ evaluation question — full reasoning and provenance in §1.8 and `docs/phase0-
 Added **Phase 12** (second policy integration, HEIGHT) as the explicit reusability proof, not
 a replacement. Corrected a mid-investigation mis-attribution about
 `CrowdNav_Prediction_AttnGraph`'s test logs, recorded rather than silently fixed (§1.8).
+
+**v1.5 changes (Phase 1 done, 2026-07-22)**: `crowd_nav_description`/`crowd_nav_control`/
+`crowd_nav_gazebo` built, and verified end to end in Gazebo — URDF valid, robot spawns,
+hardware interface + controllers activate, `/scan` publishes at spec, robot drives under a
+velocity command (odometry-confirmed). Hit and fixed several real environment issues (XML
+comment syntax, this workspace's space-containing path breaking two different launch-file
+substitutions, a `pkill -f` self-match footgun) — full trail in `docs/phase1-findings.md`.
+Root-caused (not just noted) a `gpu_lidar` rear-hemisphere self-detection artifact via a
+decisive test: rotating the sensor's yaw 180° moved the artifact with it, proving it's
+sensor-frame-relative, confirming a gz-sim rendering limitation rather than a modeling bug.
+Left open at this revision, resolved in v1.6 below.
+
+**v1.6 changes (2026-07-22)**: LiDAR artifact resolved by masking at the sensor (`<min_angle>`/
+`<max_angle>` narrowed to a clean ±90°), not filtering downstream — avoids a two-topics-diverge
+failure mode where one consumer reads raw and another reads filtered. Verified fully clean
+(0/180 self-hits, was 176/360). Real cost recorded, not hidden: the robot now runs an
+effectively-180°, not 360°, LiDAR, compounding with the already-deliberate 8 m range cap —
+documented as a stated limitation in a new `README.md`, not left as an implicit accident.
+Confirmed exact gz-sim version (6.18.0) and searched upstream for a matching issue — none
+found exactly, closest is the still-open `gazebosim/gz-sim#2743` (general `gpu_lidar` accuracy
+degradation). Phase 2's plan updated to treat AMCL tuning and costmap raytracing/decay as
+first-class tasks given the reduced FOV, not afterthoughts discovered later in Phase 10.
 
 ---
 
@@ -447,6 +470,17 @@ mapping as an alternate launch mode, on whichever world(s) Phase 0 settled on. T
 `baseline_mppi` eval config's runtime. **Done:** robot navigates a goal in both AMCL mode
 (saved map) and SLAM mode (online map); SLAM mode is a launch-file demo only — it is not
 wired into the evaluation harness (see §6).
+
+**AMCL tuning is a first-class task in this phase, not an afterthought** — Phase 1's LiDAR
+mask (§ Phase 1 above, `docs/phase1-findings.md`) reduced the sensor from 360° to a clean
+180°, and that reduction bites first here: workable (plenty of real robots run 180° LiDARs)
+but with weaker rotational constraint on scan matching than a 360° setup, needing more
+particles and more deliberate `laser_model_type` tuning than would otherwise be a default-and-
+forget config. Budget real time for this rather than discovering degraded localization
+silently later, in Phase 10's results. Also carries forward into costmap config: the reduced
+FOV means the local costmap won't clear obstacles behind the robot as it passes them (they
+persist until they age out) — `obstacle_layer` raytracing and decay parameters need to account
+for this, and reversing recoveries should be treated as less safe as a result.
 
 **Phase 3 — Dynamic keep-out zones**
 Zone-manager node (mask generator + republisher + `AddZone`/`RemoveZone` service),

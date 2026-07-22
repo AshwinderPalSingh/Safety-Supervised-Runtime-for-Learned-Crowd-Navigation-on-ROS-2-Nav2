@@ -69,23 +69,58 @@ the 360 rays reported finite hits instead of `inf`.
    **non-functional on this install**: no error, but also no gz-transport topic at all, checked
    via `ign topic -l`. Not usable as-is.
 
-**Current state**: reverted to `gpu_lidar` (the only working sensor type here) with a modest,
-physically-defensible `lidar_standoff = 0.03` m (raising it further doesn't help, since
-clearance isn't the actual cause). The front ~176° arc is clean; the rear ~176° reports a
-self-detection artifact at a distance that shifts with standoff height, in an empty world.
+**Confirmed version**: `libignition-gazebo6` `6.18.0-1~jammy` (`ign gazebo --versions` →
+`6.18.0`). Recorded precisely per the standing ask, since "which gz-sim version" is exactly
+the kind of detail that matters if this is ever reported upstream or re-checked after an
+update.
 
-**This is a genuine open issue, not resolved, flagged clearly rather than papered over.** It
-does not block Phase 1's own done-criteria (spec-compliant publishing, confirmed), but it will
-matter as soon as Phase 2 feeds this into AMCL/costmap — a phantom ~0.3–0.5 m ring of
-"obstacles" behind the robot at all times would corrupt local costmap generation and likely
-paralyze planning. Options for Phase 2, not decided yet:
-- Live with gz-sim's rendering limitation and mask/ignore the known-bad rear sector in the
-  observation/perception layer (software workaround, doesn't fix the sensor but makes it usable).
-- Investigate further with actual visual tools (a GUI or rendered image dump — not possible
-  headlessly with what's set up so far) to see if there's an ogre2/gz-sim config flag that
-  fixes the rear-frustum rendering specifically.
-- Re-check whether a future patch-level gz-sim 6.x update (still Fortress, not a distro bump)
-  fixes this, since it looks like a real renderer bug rather than a config mistake.
+**Upstream issue search**: no exact match found for this specific symptom (a clean, roughly
+2-way angular split where the affected region is tied to the *sensor's own frame*, confirmed by
+the yaw-rotation test). The closest related report is
+[`gazebosim/gz-sim#2743`](https://github.com/gazebosim/gz-sim/issues/2743) ("Inaccurate GPU
+Lidar") — general `gpu_lidar` accuracy degradation vs. Gazebo Classic, affecting both Fortress
+and Harmonic, still open as of this check. That confirms `gpu_lidar` accuracy problems are a
+known, acknowledged, still-unresolved category upstream, which fits what was found here, but
+it doesn't describe this specific sensor-frame-relative rear-hemisphere pattern. This looks
+like it could be a distinct, reportable finding — recommended, not yet done (filing an issue
+is a public action; raised to the user rather than done unilaterally).
+
+## LiDAR fix: masked at the sensor, not filtered downstream
+
+Two options were on the table: mask the affected arc directly in the `gpu_lidar` sensor's
+`<min_angle>`/`<max_angle>` (so `/scan` never contains those rays), or publish the full scan
+and filter it downstream (a `laser_filters` node, or via Nav2's `obstacle_layer` config).
+**Went with masking at the sensor.** Reasoning: a downstream filter means two representations
+of the scan exist simultaneously (raw and filtered) — a straightforward way to end up with one
+consumer (say, AMCL) reading the wrong one, producing a localization bug that looks like a
+tuning problem and is expensive to trace back to its actual cause. One topic, one truth.
+
+Implemented as two new xacro properties in `nvis_3302ard.xacro`:
+`lidar_horizontal_fov` (`${pi}`, was `${2*pi}`) and `lidar_samples` (`180`, was `360`,
+scaled down with the FOV to hold the ~1°/sample resolution spec constant) — both at a single
+call site, with an inline comment pointing back to this file and noting they restore to
+`${2*pi}`/`360` in one place if a fixed gz-sim version is ever confirmed.
+
+**Verified clean**: respawned with the masked FOV — `angle_min`/`angle_max` now ±90°, 180
+samples, **0 of 180 finite ("unexpected hit") readings** in the empty world (previously 176 of
+360). Scan rate still confirmed at ~5 Hz. Fully resolved as a practical matter, at the cost of
+field of view.
+
+**This is a real, stated cost, not a free fix** — the robot now runs a ~184°-clean, masked
+down to a clean ±90° (180°) forward-facing sensor, not the original 360° spec, on top of the
+already-deliberate 8 m range cap. That combination (180° / 8 m) is closer to a real budget
+LiDAR than the original spec and should be documented as a deliberate, known limitation in the
+project README, not discovered later as an accident. Three concrete consequences flagged for
+Phase 2, not yet acted on:
+1. **AMCL will be materially worse** with ~180° than 360° — workable (plenty of real robots
+   run 180° LiDARs) but weaker rotational constraint; expect to need more particles and more
+   careful `laser_model_type` tuning than a 360° setup would.
+2. **The local costmap won't clear behind the robot** — obstacles passed will persist until
+   they age out. `obstacle_layer` raytracing and the costmap's decay behavior need to account
+   for this; reversing recoveries are less safe as a result.
+3. **Compounds with the 8 m range cap** — deliberately pessimistic in both range and field of
+   view now. Defensible (closer to a real budget sensor), but a deliberate limitation to state
+   plainly, not an accident to discover later.
 
 ## Motion verified
 
