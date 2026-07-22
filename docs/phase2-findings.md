@@ -151,6 +151,40 @@ ghost-obstacle region) before attempting them via the actual `NavigateToPose` ac
 **SLAM-mode 5-goal test: not attempted this session** - AMCL-mode testing alone consumed the
 remaining time/reliability budget.
 
+## Hygiene tooling added (post-review)
+
+The `/dev/shm` degradation isn't a one-off - Phase 10's evaluation harness will run the full
+stack hundreds of times unattended, so this needed to become automatic, not a manual cleanup
+step to remember. Added:
+- `scripts/ros2_teardown.sh`: graceful shutdown (SIGINT, wait, SIGTERM, wait, SIGKILL only for
+  stragglers) followed by `/dev/shm/fastrtps_*` cleanup, but *only* once nothing ROS/Gazebo-
+  related is confirmed still running (never deletes shared memory a live process might hold).
+  Safe to run as a saved script, unlike the inline `pkill -f` self-match footgun documented in
+  Phase 1 findings - the search patterns don't appear in this script's own invocation line.
+- `scripts/check_dds_health.sh`: counts stale `fastrtps_*` segments and fails loudly (nonzero
+  exit, clear message) if above a threshold (default 20 - Phase 2 saw 87 right before the
+  lifecycle hang). Wired directly into `spawn_robot.launch.py` (and therefore both
+  `slam.launch.py` and `amcl.launch.py`, which include it) as the first thing
+  `generate_launch_description()` does - a dirty session now fails the launch immediately,
+  before Gazebo/Nav2 even start, instead of hanging 40+ seconds later with no clear cause.
+
+## Recommendation: switch to CycloneDDS
+
+Raised as a question by the reviewer; researched rather than guessed at. FastRTPS's shared-
+memory transport creates ad-hoc per-participant segments in `/dev/shm` with no built-in
+recovery if a participant is killed uncleanly - exactly this session's failure mode. CycloneDDS
+by default doesn't create this kind of persistent `/dev/shm` clutter at all; its shared-memory
+support (when explicitly enabled) is iceoryx-based, a separate, more mature shared-memory IPC
+framework built around a daemon specifically designed to handle crashed participants
+gracefully. Independent of the shared-memory question: multiple real-world reports specifically
+describe Nav2 reliability issues being resolved by switching FastRTPS to CycloneDDS. It's also
+a reasonable, well-supported choice if hardware deployment over WiFi ever happens - not
+necessarily the theoretical fastest option on a lossy link (Zenoh reportedly does better there,
+but is a bigger ecosystem shift, out of scope for now), but a safe, mainstream improvement over
+the default. **Recommended.** Needs `sudo apt install ros-humble-rmw-cyclonedds-cpp` (confirmed
+available, not yet installed) plus `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` - low cost,
+easily reversible by unsetting the env var.
+
 ## Honest assessment of the done-bar
 
 The agreed bar (5 consecutive successful goals, both AMCL and SLAM modes, no manual

@@ -696,15 +696,33 @@ mode) lives entirely in YAML — no code changes to select or tune an adapter.
 
 **Trained radius vs physical radius.** SARL's self-state input includes the agent's own
 radius as a literal feature, and CrowdNav's public training config (`env.config`, confirmed)
-sets `robot_radius = 0.3` m — roughly 3× our actual robot's physical radius (~0.095 m, half
-the 190 mm chassis width). Feeding the network our true radius would itself be a distribution
-shift, independent of everything else in §1.1/§1.4. `SarlAdapter` therefore takes two separate
-config values: `policy_radius` (default 0.3 m, matching CrowdNav's training distribution —
-fed into the network's self-state feature) and `robot_radius` (from the URDF/measured — used
-everywhere the actual physical footprint matters: costmap inflation, the safety supervisor's
-forward-sim collision check, and the OOD proximity threshold below). This split is a
-`SarlAdapter`-specific detail; the generic `PolicyAdapter` interface doesn't need to know
-about it.
+sets `robot_radius = 0.3` m — roughly 2× our actual robot's physical collision radius.
+Feeding the network our true radius would itself be a distribution shift, independent of
+everything else in §1.1/§1.4. `SarlAdapter` therefore takes two separate config values:
+`policy_radius` (default 0.3 m, matching CrowdNav's training distribution — fed into the
+network's self-state feature) and `robot_radius` (the physical footprint — used in exactly
+**two** places: costmap inflation and the safety supervisor's forward-sim collision check).
+**Correction (2026-07-22, caught while updating this section after a Phase 2 bug — see
+below): this originally, incorrectly, also listed the OOD proximity threshold as a
+`robot_radius` consumer. It isn't — §4.4 below is explicit that the proximity threshold uses
+`policy_radius`, not the physical radius, and that's correct: it needs to match what the
+policy was trained against, not the real robot's size.** This split is a `SarlAdapter`-specific
+detail; the generic `PolicyAdapter` interface doesn't need to know about it.
+
+**`robot_radius`'s actual value — diagonal, not face-normal half-width, confirmed the hard way
+in Phase 2.** The chassis is a 190×190 mm square. The face-normal half-width is 0.095 m, but a
+circular collision-radius approximation needs the **diagonal** (`sqrt(0.095²+0.095²) =
+0.1344 m`) — using the smaller face-normal figure under-represents the footprint at the
+corners specifically, which is exactly the bug Phase 2 found live (§ Phase 2 above,
+`docs/phase2-findings.md`): an undersized `robot_radius: 0.12` let the planner treat squeezes
+as clear that the real square corners would have clipped. Fixed to `0.14` m (small margin over
+the exact diagonal). Single source of truth is now the `robot_collision_radius` xacro property
+in `crowd_nav_description/urdf/nvis_3302ard.xacro`; `crowd_nav_bringup/config/nav2_params.yaml`
+already matches it (both costmaps) with a comment pointing back to it. **Requirement for
+Phase 9**: the safety supervisor's forward-sim collision check must use this same value/
+property, not re-derive or hardcode its own — this is exactly the kind of value that's cheap to
+get right once and expensive to have silently drift between two places that both matter for
+physical safety.
 
 ### 4.4 OOD detector — sharpened
 
@@ -861,7 +879,10 @@ of them.
   `policy.config` (§1.8/§1.9) — corrected from this plan's original "unicycle" assumption.
   `SarlAdapter` converts the holonomic output to `(v, ω)` for our diff-drive robot; see §1.9.
 - `policy_radius` (fed to the network) defaults to CrowdNav's training value, 0.3 m;
-  `robot_radius` (used for actual collision/costmap/supervisor geometry) comes from the URDF —
+  `robot_radius` (used for actual collision/costmap geometry, and required for the Phase 9
+  supervisor too) is the `robot_collision_radius` xacro property in
+  `crowd_nav_description/urdf/nvis_3302ard.xacro` — 0.14 m, the chassis diagonal plus a small
+  margin, not the smaller face-normal half-width (a real bug, found and fixed in Phase 2) —
   see §4.3.
 - SARL weights sourced from `tkkim-robot/Gazebo-CrowdNav`'s `data_sarl/output/rl_model.pth`
   (config-matched, MIT-licensed lineage via upstream `vita-epfl/CrowdNav`) rather than

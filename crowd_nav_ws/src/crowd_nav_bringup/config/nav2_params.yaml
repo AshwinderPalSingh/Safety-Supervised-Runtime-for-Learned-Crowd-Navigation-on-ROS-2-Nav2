@@ -189,6 +189,7 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.03
+      # Must match robot_collision_radius in crowd_nav_description/urdf/nvis_3302ard.xacro (single source of truth, diagonal-based - IMPLEMENTATION_PLAN.md S4.3). Update both together.
       robot_radius: 0.14
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
@@ -226,6 +227,7 @@ global_costmap:
       update_frequency: 2.0
       publish_frequency: 1.0
       resolution: 0.03
+      # Must match robot_collision_radius in crowd_nav_description/urdf/nvis_3302ard.xacro (single source of truth, diagonal-based - IMPLEMENTATION_PLAN.md S4.3). Update both together.
       robot_radius: 0.14
       # Static-map-only global costmap (no dynamic obstacle_layer here) is deliberate, not an
       # oversight: it sidesteps the same rear-blind-spot problem entirely at the global level

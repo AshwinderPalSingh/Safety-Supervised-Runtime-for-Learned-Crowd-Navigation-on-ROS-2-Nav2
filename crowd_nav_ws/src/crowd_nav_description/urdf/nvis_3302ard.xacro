@@ -11,6 +11,18 @@
   <xacro:property name="chassis_height" value="0.080"/>
   <xacro:property name="total_mass"     value="1.0"/>
 
+  <!-- Single source of truth for any circular collision-radius approximation of this robot
+       (Nav2 costmaps, the Phase 9 safety supervisor's forward-sim collision check - see
+       IMPLEMENTATION_PLAN.md S4.3). MUST be derived from the chassis DIAGONAL
+       (sqrt((L/2)^2+(W/2)^2) = 0.1344 m), not the smaller face-normal half-width (0.095 m) -
+       a real bug found in Phase 2 (docs/phase2-findings.md): an under-sized circular radius
+       lets a planner think a squeeze is clear when the real square corners would clip.
+       0.14 m adds a small margin over the exact 0.1344 m diagonal. Every consumer of a
+       circular robot radius should reference this value, not re-derive or hardcode its own -
+       crowd_nav_bringup/config/nav2_params.yaml's robot_radius already matches this; Phase 9
+       must too. -->
+  <xacro:property name="robot_collision_radius" value="0.14"/>
+
   <!-- [PENDING] ESTIMATES, to be replaced with measured values. See MEASUREMENTS.md. -->
   <xacro:property name="wheel_radius"     value="0.0325"/> <!-- [PENDING] -->
   <xacro:property name="wheel_width"      value="0.026"/>  <!-- [PENDING] -->

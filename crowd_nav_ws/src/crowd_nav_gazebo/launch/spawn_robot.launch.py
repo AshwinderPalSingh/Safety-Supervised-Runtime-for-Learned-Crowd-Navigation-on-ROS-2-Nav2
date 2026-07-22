@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, RegisterEventHandler
@@ -9,7 +10,29 @@ from launch_ros.descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
+def _check_dds_health():
+    # Fails the launch immediately, before spawning anything, rather than let a dirty DDS
+    # state silently degrade into the Nav2 lifecycle-activation hangs found in Phase 2
+    # (docs/phase2-findings.md). This is the launch-time half of that phase's standing ask;
+    # scripts/ros2_teardown.sh is the corresponding cleanup half.
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+    check_script = os.path.join(repo_root, 'scripts', 'check_dds_health.sh')
+    if not os.path.isfile(check_script):
+        # Workspace layout differs from a source checkout (e.g. a bare install-space-only
+        # deployment) - don't block launches over a missing convenience script.
+        return
+    result = subprocess.run(['bash', check_script], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"DDS health check failed, refusing to launch:\n{result.stdout}{result.stderr}\n"
+            "Run scripts/ros2_teardown.sh (only if no ROS/Gazebo processes are currently "
+            "running), then retry."
+        )
+
+
 def generate_launch_description():
+    _check_dds_health()
+
     world_file_arg = DeclareLaunchArgument('world_file', default_value='empty.sdf')
     spawn_x_arg = DeclareLaunchArgument('spawn_x', default_value='0.0')
     spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value='0.0')
