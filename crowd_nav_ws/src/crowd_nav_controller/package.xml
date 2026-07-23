@@ -4,11 +4,11 @@
   <name>crowd_nav_controller</name>
   <version>0.1.0</version>
   <description>
-    Phase 7: nav2_core::Controller plugin (CrowdNavController) - hold-last-action rate
+    Phase 7/8: nav2_core::Controller plugin (CrowdNavController) - hold-last-action rate
     handling, an inference-latency watchdog structured to also cover Phase 9's supervisor
-    check, and failover to a genuinely embedded nav2_core::Controller fallback loaded via
-    pluginlib. Validated against Phase 6's DummyAdapter, not SARL (IMPLEMENTATION_PLAN.md S3
-    Phase 7, S4.6).
+    check, failover to a genuinely embedded nav2_core::Controller fallback loaded via
+    pluginlib, and a config-selected PolicyAdapter (dummy or sarl) fed by live perception
+    (IMPLEMENTATION_PLAN.md S3 Phase 7/8, S4.6/S4.7).
   </description>
   <maintainer email="ashwinder4377@gmail.com">ashwinder</maintainer>
   <license>MIT</license>
@@ -28,6 +28,7 @@
   <depend>angles</depend>
   <depend>ament_index_cpp</depend>
   <depend>crowd_nav_observation</depend>
+  <depend>crowd_nav_perception</depend>
   <depend>crowd_nav_policy_adapters</depend>
   <depend>crowd_nav_onnxruntime_vendor</depend>
 

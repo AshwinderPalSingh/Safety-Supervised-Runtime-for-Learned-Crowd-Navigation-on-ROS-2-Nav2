@@ -28,6 +28,11 @@ struct CandidateActionSpaceConfig
   // 1.0 separately.
   double policy_radius_m = 0.3;
   double policy_v_pref_mps = 1.0;
+  // SarlAdapter's discount factor, `value = reward + gamma^(time_step*v_pref) * network_value`
+  // (multi_human_rl.py's predict(), S4.7) - the checkpoint's own policy.config [rl] section,
+  // not a default. Added v1.15 (Phase 8), co-located here for the same single-source-of-truth
+  // reason as policy_radius_m/policy_v_pref_mps above.
+  double sarl_gamma = 0.9;
 
   // Candidate count = speed_samples * rotation_samples + 1 (the +1 is the stop action) -
   // computed here, never hand-typed at a call site.

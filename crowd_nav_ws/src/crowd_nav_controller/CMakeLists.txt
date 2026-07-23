@@ -20,6 +20,7 @@ find_package(pluginlib REQUIRED)
 find_package(angles REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(crowd_nav_observation REQUIRED)
+find_package(crowd_nav_perception REQUIRED)
 find_package(crowd_nav_policy_adapters REQUIRED)
 find_package(crowd_nav_onnxruntime_vendor REQUIRED)
 
@@ -37,6 +38,7 @@ set(dependencies
   angles
   ament_index_cpp
   crowd_nav_observation
+  crowd_nav_perception
   crowd_nav_policy_adapters
 )
 

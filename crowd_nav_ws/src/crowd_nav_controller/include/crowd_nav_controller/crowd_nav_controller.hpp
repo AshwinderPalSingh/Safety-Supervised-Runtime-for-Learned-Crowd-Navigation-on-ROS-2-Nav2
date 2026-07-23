@@ -13,8 +13,9 @@
 
 #include "crowd_nav_controller/controller_decision_core.hpp"
 #include "crowd_nav_observation/world_state.hpp"
+#include "crowd_nav_perception/human_state_source.hpp"
 #include "crowd_nav_policy_adapters/candidate_action_space.hpp"
-#include "crowd_nav_policy_adapters/dummy_adapter.hpp"
+#include "crowd_nav_policy_adapters/policy_adapter.hpp"
 
 namespace crowd_nav_controller
 {
@@ -50,7 +51,8 @@ public:
 
 private:
   crowd_nav_observation::WorldState buildWorldState(
-    const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity) const;
+    const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity,
+    const rclcpp::Time & query_time) const;
   geometry_msgs::msg::TwistStamped toTwistStamped(
     const crowd_nav_policy_adapters::Velocity2D & command,
     const geometry_msgs::msg::PoseStamped & pose) const;
@@ -71,10 +73,18 @@ private:
   nav_msgs::msg::Path current_plan_;
 
   crowd_nav_policy_adapters::CandidateActionSpaceConfig action_space_config_;
-  std::unique_ptr<crowd_nav_policy_adapters::DummyAdapter> adapter_;
+  // Generic PolicyAdapter pointer (added v1.15/Phase 8): which concrete adapter is
+  // constructed is a config choice (`adapter_type`: "dummy" | "sarl"), not a compile-time one -
+  // this is the actual exercise of the adapter-swap promise the whole PolicyAdapter interface
+  // exists for (S3 Phase 8).
+  std::unique_ptr<crowd_nav_policy_adapters::PolicyAdapter> adapter_;
   std::unique_ptr<Ort::Env> ort_env_;
   std::unique_ptr<Ort::Session> ort_session_;
   std::unique_ptr<ControllerDecisionCore> decision_core_;
+  // Live perception (added v1.15/Phase 8) - resolves the LifecycleNode incompatibility Phase 7
+  // found and deferred (docs/phase7-findings.md): GroundTruthHumanSource's production
+  // constructor is now a template, usable from a nav2_core plugin's LifecycleNode directly.
+  std::unique_ptr<crowd_nav_perception::HumanStateSource> human_source_;
 
   pluginlib::ClassLoader<nav2_core::Controller> fallback_loader_;
   nav2_core::Controller::Ptr fallback_controller_;

@@ -22,3 +22,8 @@ human_radius_m: 0.3
 # SarlAdapter (Phase 8) share one source instead of each hand-typing these separately.
 policy_radius_m: 0.3
 policy_v_pref_mps: 1.0
+
+# SarlAdapter's discount factor (multi_human_rl.py's predict(): reward + gamma^(time_step*
+# v_pref) * network_value) - the checkpoint's own policy.config [rl] section, not a default.
+# Added v1.15 (Phase 8).
+sarl_gamma: 0.9

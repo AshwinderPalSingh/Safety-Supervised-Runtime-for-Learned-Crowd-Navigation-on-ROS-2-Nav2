@@ -20,6 +20,7 @@ CandidateActionSpaceConfig loadCandidateActionSpaceConfig(const std::string & ya
   config.human_radius_m = node["human_radius_m"].as<double>();
   config.policy_radius_m = node["policy_radius_m"].as<double>();
   config.policy_v_pref_mps = node["policy_v_pref_mps"].as<double>();
+  config.sarl_gamma = node["sarl_gamma"].as<double>();
 
   if (config.speed_samples <= 0 || config.rotation_samples <= 0) {
     throw std::runtime_error(

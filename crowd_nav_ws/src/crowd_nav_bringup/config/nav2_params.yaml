@@ -102,12 +102,17 @@ controller_server:
     FollowPath:
       plugin: "crowd_nav_controller::CrowdNavController"
       fallback_controller_plugin: "nav2_mppi_controller::MPPIController"
+      # "sarl" (Phase 8) is now this project's real policy - "dummy" (Phase 6/7) remains a
+      # permanent zero-checkpoint smoke-test fixture, selectable here but no longer the
+      # default (IMPLEMENTATION_PLAN.md S3 Phase 8).
+      adapter_type: "sarl"
       # Left empty deliberately: nav2_params.yaml is loaded as a raw params file with no
       # launch-substitution preprocessing, so "$(find-pkg-share ...)" would NOT be resolved
       # here (verified against how this project's own launch files pass this file to
-      # Node(parameters=[...])) - CrowdNavController resolves a portable default
-      # (crowd_nav_policy_adapters's own installed models/dummy_policy.onnx) when this is
-      # empty, the same way it does for policy_adapter_config_path.
+      # Node(parameters=[...])) - CrowdNavController resolves a portable default per
+      # adapter_type (crowd_nav_policy_adapters's own installed models/sarl_value_net.onnx or
+      # models/dummy_policy.onnx) when this is empty, the same way it does for
+      # policy_adapter_config_path.
       onnx_model_path: ""
       # Leaves headroom inside the 0.05s tick period (controller_frequency: 20.0 above) for
       # whatever else the tick does, including Phase 9's supervisor check once it exists

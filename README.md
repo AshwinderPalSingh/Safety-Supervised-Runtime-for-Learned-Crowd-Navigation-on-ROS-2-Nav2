@@ -23,7 +23,7 @@ shells pick it up automatically; only needed manually in non-interactive/scripte
 `scripts/check_dds_health.sh` and `scripts/ros2_teardown.sh` provide an automated dirty-state
 check and safe cleanup regardless of which RMW is active - see Phase 2 findings for both.
 
-**Status**: Phase 7 of 12 complete. Phase 2: baseline Nav2 + AMCL + SLAM, 5/5 goals both modes,
+**Status**: Phase 8 of 12 complete. Phase 2: baseline Nav2 + AMCL + SLAM, 5/5 goals both modes,
 verified against ground-truth pose (`docs/phase2-findings.md`). Phase 3: dynamic keep-out
 zones, verified with a real mid-navigation block-and-detour test (`docs/phase3-findings.md`).
 Phase 4: deterministic pedestrian simulation (HuNav dropped - see `IMPLEMENTATION_PLAN.md`
@@ -41,7 +41,13 @@ Phase 6 throwaway (`docs/phase6-findings.md`). Phase 7: `CrowdNavController`, a 
 fallback - end-to-end driving in Gazebo confirmed, and the failover transition verified
 quantitatively (a real single-tick command discontinuity at the switch, bounded to the exact
 configured accel/decel limits by the existing velocity smoother), not just the trigger
-(`docs/phase7-findings.md`). See `IMPLEMENTATION_PLAN.md` §3 for the full phase list.
+(`docs/phase7-findings.md`). Phase 8: `SarlAdapter` - the real SARL candidate-action search,
+ONNX export verified bit-close against the original PyTorch checkpoint before any C++ code was
+written, action-match tested against 10 adversarial cases mined from the reference's own value
+array (top-two gaps as tight as 0.0018%). Found and documented a real architectural gap along
+the way: the checkpoint's own source repo silently FOV-filters its human list before SARL ever
+sees it, which this project does not yet replicate (`docs/phase8-findings.md`). See
+`IMPLEMENTATION_PLAN.md` §3 for the full phase list.
 
 ## Known limitations (stated deliberately, not discovered as accidents)
 
@@ -76,6 +82,16 @@ visible up front rather than buried in a findings doc no one reads before citing
   `IMPLEMENTATION_PLAN.md` §1.4 of the original brief), but a real limitation until the
   perception-degradation model (noise, dropout, latency, occlusion) is exercised in the
   evaluation harness.
+- **SarlAdapter feeds the network every perceived human, with no field-of-view or range
+  restriction.** The checkpoint's own source repo (`tkkim-robot/Gazebo-CrowdNav`) applies a
+  simulated depth-camera FOV filter (Intel D435I spec: 85.2°/12 m) inside its own `JointState`
+  construction before SARL ever sees the human list - found while building Phase 8's
+  action-match test fixture (`docs/phase8-findings.md`). This project's sensor is a different,
+  narrower device (~180°/8 m, per the LiDAR limitation above), so copying that exact filter
+  would itself be wrong - but feeding the network humans the robot's real sensor couldn't
+  actually see is a genuine, unaddressed distribution-shift risk, not validated against how the
+  checkpoint's source repo evaluated it. Flagged for resolution before Phase 10's numbers are
+  treated as meaningful crowd-interaction results.
 
 ## Known upstream API/doc discrepancies (verified against real behavior, not assumed)
 

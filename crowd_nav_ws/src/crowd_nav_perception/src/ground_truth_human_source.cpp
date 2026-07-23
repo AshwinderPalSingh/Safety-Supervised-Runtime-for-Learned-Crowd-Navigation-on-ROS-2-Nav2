@@ -7,29 +7,6 @@
 namespace crowd_nav_perception
 {
 
-GroundTruthHumanSource::GroundTruthHumanSource(
-  const rclcpp::Node::SharedPtr & node,
-  const std::string & pedestrian_topic,
-  const std::string & robot_pose_topic,
-  const DegradationParams & params)
-: params_(params),
-  rng_(params.degradation_seed),
-  pos_noise_dist_(0.0, params.sigma_pos_m),
-  vel_noise_dist_(0.0, params.sigma_vel_mps),
-  dropout_dist_(params.dropout_prob)
-{
-  pedestrian_sub_ = node->create_subscription<crowd_nav_pedestrians::msg::PedestrianArray>(
-    pedestrian_topic, 10,
-    [this](const crowd_nav_pedestrians::msg::PedestrianArray::SharedPtr msg) {
-      onPedestrianArray(msg);
-    });
-  robot_pose_sub_ = node->create_subscription<geometry_msgs::msg::Pose>(
-    robot_pose_topic, 10,
-    [this](const geometry_msgs::msg::Pose::SharedPtr msg) {
-      onRobotPose(msg);
-    });
-}
-
 GroundTruthHumanSource::GroundTruthHumanSource(const DegradationParams & params)
 : params_(params),
   rng_(params.degradation_seed),

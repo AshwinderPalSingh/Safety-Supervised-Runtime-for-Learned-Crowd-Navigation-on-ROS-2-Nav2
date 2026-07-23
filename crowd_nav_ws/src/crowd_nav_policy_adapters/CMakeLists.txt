@@ -24,6 +24,9 @@ add_library(${PROJECT_NAME} SHARED
   src/shape_validation.cpp
   src/onnx_inference.cpp
   src/dummy_adapter.cpp
+  src/sarl_rotate.cpp
+  src/sarl_reward.cpp
+  src/sarl_adapter.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -51,7 +54,7 @@ install(
   DESTINATION share/${PROJECT_NAME}/models
 )
 install(
-  PROGRAMS scripts/generate_dummy_model.py
+  PROGRAMS scripts/generate_dummy_model.py scripts/export_sarl_model.py
   DESTINATION lib/${PROJECT_NAME}
 )
 install(
@@ -73,6 +76,9 @@ if(BUILD_TESTING)
     test/test_candidate_propagation.cpp
     test/test_shape_validation.cpp
     test/test_dummy_adapter.cpp
+    test/test_sarl_rotate.cpp
+    test/test_sarl_reward.cpp
+    test/test_sarl_adapter.cpp
   )
   target_link_libraries(test_policy_adapters ${PROJECT_NAME})
   target_include_directories(test_policy_adapters PRIVATE ${crowd_nav_onnxruntime_vendor_INCLUDE_DIRS})

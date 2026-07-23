@@ -42,11 +42,36 @@ namespace crowd_nav_perception
 class GroundTruthHumanSource : public HumanStateSource
 {
 public:
+  // Templated on the node type (added v1.15/Phase 8) so this works with both rclcpp::Node and
+  // rclcpp_lifecycle::LifecycleNode - every nav2_core plugin receives the latter, not the
+  // former, and both provide create_subscription with the same signature/return type via
+  // different concrete classes. Found and fixed the hard way: Phase 7 first needed this inside
+  // a live nav2_core::Controller and discovered the mismatch (docs/phase7-findings.md);
+  // resolved here once Phase 8 actually needed live perception for its own live verification.
+  // Defined inline (templates must be visible at the instantiation point).
+  template<typename NodeT>
   GroundTruthHumanSource(
-    const rclcpp::Node::SharedPtr & node,
+    const std::shared_ptr<NodeT> & node,
     const std::string & pedestrian_topic,
     const std::string & robot_pose_topic,
-    const DegradationParams & params);
+    const DegradationParams & params)
+  : params_(params),
+    rng_(params.degradation_seed),
+    pos_noise_dist_(0.0, params.sigma_pos_m),
+    vel_noise_dist_(0.0, params.sigma_vel_mps),
+    dropout_dist_(params.dropout_prob)
+  {
+    pedestrian_sub_ = node->template create_subscription<crowd_nav_pedestrians::msg::PedestrianArray>(
+      pedestrian_topic, 10,
+      [this](const crowd_nav_pedestrians::msg::PedestrianArray::SharedPtr msg) {
+        onPedestrianArray(msg);
+      });
+    robot_pose_sub_ = node->template create_subscription<geometry_msgs::msg::Pose>(
+      robot_pose_topic, 10,
+      [this](const geometry_msgs::msg::Pose::SharedPtr msg) {
+        onRobotPose(msg);
+      });
+  }
 
   // Test-only constructor: no ROS subscriptions at all, drive ingestPedestrian()/setRobotPose()
   // directly. Production code always uses the constructor above.

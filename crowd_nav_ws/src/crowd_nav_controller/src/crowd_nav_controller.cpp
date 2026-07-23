@@ -12,17 +12,24 @@
 #include "pluginlib/class_list_macros.hpp"
 #include "tf2/utils.h"
 
+#include "crowd_nav_perception/degradation_params.hpp"
+#include "crowd_nav_perception/ground_truth_human_source.hpp"
+#include "crowd_nav_policy_adapters/dummy_adapter.hpp"
 #include "crowd_nav_policy_adapters/onnx_inference.hpp"
+#include "crowd_nav_policy_adapters/sarl_adapter.hpp"
 #include "crowd_nav_policy_adapters/shape_validation.hpp"
 
 namespace crowd_nav_controller
 {
 
 using crowd_nav_observation::WorldState;
+using crowd_nav_perception::DegradationParams;
+using crowd_nav_perception::GroundTruthHumanSource;
 using crowd_nav_policy_adapters::CandidateActionSpaceConfig;
 using crowd_nav_policy_adapters::DummyAdapter;
 using crowd_nav_policy_adapters::loadCandidateActionSpaceConfig;
 using crowd_nav_policy_adapters::runInference;
+using crowd_nav_policy_adapters::SarlAdapter;
 using crowd_nav_policy_adapters::validateSessionShapes;
 using crowd_nav_policy_adapters::Velocity2D;
 
@@ -45,8 +52,18 @@ void CrowdNavController::configure(
 
   nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".fallback_controller_plugin", rclcpp::PARAMETER_STRING);
+  // "dummy" (Phase 6/7) or "sarl" (Phase 8) - the actual exercise of the adapter-swap promise
+  // the whole PolicyAdapter interface exists for (S3 Phase 8). Defaults to "dummy" so existing
+  // Phase 7 configs keep working unchanged unless explicitly switched.
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".adapter_type", rclcpp::ParameterValue(std::string("dummy")));
   nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".policy_adapter_config_path", rclcpp::ParameterValue(std::string()));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pedestrian_topic", rclcpp::ParameterValue(std::string("/pedestrians")));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".robot_pose_topic",
+    rclcpp::ParameterValue(std::string("/ground_truth/robot_pose")));
   // Empty default (not PARAMETER_STRING/required): nav2_params.yaml is loaded as a raw YAML
   // params file with no launch-substitution preprocessing (confirmed against how this
   // project's own launch files pass it to Node(parameters=[...]) - "$(find-pkg-share ...)"
@@ -71,6 +88,7 @@ void CrowdNavController::configure(
 
   const std::string fallback_plugin =
     node->get_parameter(plugin_name_ + ".fallback_controller_plugin").as_string();
+  const std::string adapter_type = node->get_parameter(plugin_name_ + ".adapter_type").as_string();
   std::string config_path =
     node->get_parameter(plugin_name_ + ".policy_adapter_config_path").as_string();
   if (config_path.empty()) {
@@ -79,9 +97,15 @@ void CrowdNavController::configure(
   }
   std::string model_path = node->get_parameter(plugin_name_ + ".onnx_model_path").as_string();
   if (model_path.empty()) {
+    const std::string default_model = (adapter_type == "sarl") ?
+      "/models/sarl_value_net.onnx" : "/models/dummy_policy.onnx";
     model_path = ament_index_cpp::get_package_share_directory("crowd_nav_policy_adapters") +
-      "/models/dummy_policy.onnx";
+      default_model;
   }
+  const std::string pedestrian_topic =
+    node->get_parameter(plugin_name_ + ".pedestrian_topic").as_string();
+  const std::string robot_pose_topic =
+    node->get_parameter(plugin_name_ + ".robot_pose_topic").as_string();
   watchdog_window_s_ = node->get_parameter(plugin_name_ + ".watchdog_window_s").as_double();
   debug_inject_decision_delay_s_ =
     node->get_parameter(plugin_name_ + ".debug_inject_decision_delay_s").as_double();
@@ -90,7 +114,16 @@ void CrowdNavController::configure(
   max_angular_vel_rps_ = node->get_parameter(plugin_name_ + ".max_angular_vel_rps").as_double();
 
   action_space_config_ = loadCandidateActionSpaceConfig(config_path);
-  adapter_ = std::make_unique<DummyAdapter>(action_space_config_);
+  if (adapter_type == "sarl") {
+    adapter_ = std::make_unique<SarlAdapter>(action_space_config_);
+  } else if (adapter_type == "dummy") {
+    adapter_ = std::make_unique<DummyAdapter>(action_space_config_);
+  } else {
+    RCLCPP_FATAL(
+      logger_, "CrowdNavController '%s': unknown adapter_type '%s' (expected 'dummy' or 'sarl')",
+      plugin_name_.c_str(), adapter_type.c_str());
+    throw std::runtime_error("CrowdNavController: unknown adapter_type " + adapter_type);
+  }
 
   ort_env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, (plugin_name_ + "_onnx").c_str());
   Ort::SessionOptions session_options;
@@ -99,6 +132,15 @@ void CrowdNavController::configure(
 
   decision_core_ = std::make_unique<ControllerDecisionCore>(
     action_space_config_.time_step_s, watchdog_window_s_);
+
+  // Live perception (S3 Phase 8/S4.7): default DegradationParams is oracle passthrough (no
+  // noise/dropout/latency) - this phase's focus is the search reimplementation, not perception
+  // degradation, which Phase 5 already tested independently. GroundTruthHumanSource's
+  // production constructor is now templated (fixed this phase - it previously required
+  // rclcpp::Node, which rclcpp_lifecycle::LifecycleNode is not, see docs/phase7-findings.md).
+  DegradationParams perception_params;
+  human_source_ = std::make_unique<GroundTruthHumanSource>(
+    node, pedestrian_topic, robot_pose_topic, perception_params);
 
   try {
     fallback_controller_ = fallback_loader_.createUniqueInstance(fallback_plugin);
@@ -122,6 +164,7 @@ void CrowdNavController::cleanup()
   ort_env_.reset();
   adapter_.reset();
   decision_core_.reset();
+  human_source_.reset();
 }
 
 void CrowdNavController::activate()
@@ -176,7 +219,8 @@ void CrowdNavController::setSpeedLimit(const double & speed_limit, const bool & 
 }
 
 WorldState CrowdNavController::buildWorldState(
-  const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity) const
+  const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity,
+  const rclcpp::Time & query_time) const
 {
   WorldState state;
   const double theta = tf2::getYaw(pose.pose.orientation);
@@ -201,11 +245,7 @@ WorldState CrowdNavController::buildWorldState(
     state.robot.gy = state.robot.py;
   }
 
-  // No live HumanStateSource wired in this phase: GroundTruthHumanSource (Phase 5) takes an
-  // rclcpp::Node::SharedPtr, which rclcpp_lifecycle::LifecycleNode (what every nav2_core
-  // plugin actually gets) is not - a real integration gap, not yet resolved, flagged for
-  // whichever phase first needs live perception inside a Nav2 plugin (docs/phase7-findings.md).
-  // Empty humans is an already-tested, legitimate WorldState (Phase 5/6 padding path).
+  state.humans = human_source_->getHumans(query_time);
   return state;
 }
 
@@ -247,23 +287,31 @@ geometry_msgs::msg::TwistStamped CrowdNavController::computeVelocityCommands(
     return fallback_controller_->computeVelocityCommands(pose, velocity, goal_checker);
   }
 
+  const rclcpp::Time now = node_.lock()->get_clock()->now();
+
   // Supervisor-check placeholder (IMPLEMENTATION_PLAN.md S1.7/S4.6): Phase 9's forward-sim/
   // costmap check will be called here, inside this same closure, so its cost is covered by the
   // watchdog window from day one rather than requiring this boundary to be reworked later. It
   // is a no-op today because the supervisor doesn't exist yet.
-  auto run_policy_decision = [this, pose, velocity]() -> Velocity2D {
+  auto run_policy_decision = [this, pose, velocity, now]() -> Velocity2D {
       if (debug_inject_decision_delay_s_ > 0.0) {
         std::this_thread::sleep_for(
           std::chrono::duration<double>(debug_inject_decision_delay_s_));
       }
-      const WorldState state = buildWorldState(pose, velocity);
+      const WorldState state = buildWorldState(pose, velocity, now);
       const auto inputs = adapter_->buildInputs(state);
-      const auto outputs = runInference(*ort_session_, inputs, {DummyAdapter::kOutputName});
+      // Empty batch (S4.7's zero-humans stopgap: SarlAdapter returns no rows when there's
+      // nothing to reason about) - skip inference entirely rather than call the network with
+      // a degenerate zero-length input. Adapter-agnostic: DummyAdapter never produces an empty
+      // batch (its padding always fills all max_humans slots), so this never triggers for it.
+      if (inputs.data.empty() || inputs.data[0].empty()) {
+        return {0.0, 0.0};
+      }
+      const auto outputs = runInference(*ort_session_, inputs, adapter_->expectedShape().output_names);
       // Supervisor check placeholder call site - no-op until Phase 9.
       return adapter_->selectAction(outputs, state);
     };
 
-  const rclcpp::Time now = node_.lock()->get_clock()->now();
   const DecisionResult result = decision_core_->decide(now, run_policy_decision);
 
   const bool source_is_fallback = result.source == DecisionSource::kFallback;

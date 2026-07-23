@@ -1,9 +1,9 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.14 (2026-07-21, updated 2026-07-23) — Phase 7 done
+## Implementation Plan v1.16 (2026-07-21, updated 2026-07-23) — Phase 8 done
 
 This document is the living plan for the project, updated as each phase lands rather than
-frozen at the start. Phases 0–7 are done as of this revision (§3 has current status per
-phase); everything from Phase 8 onward is still plan, not implementation.
+frozen at the start. Phases 0–8 are done as of this revision (§3 has current status per
+phase); everything from Phase 9 onward is still plan, not implementation.
 
 **v1.1 changes** (post-review, same day): inserted a synthetic-adapter phase before SARL to
 decouple runtime-plumbing risk from SARL-search-correctness risk (§3, new Phase 6); confirmed
@@ -242,6 +242,50 @@ couldn't actually change (fixed with a dynamic parameter callback), a SLAM+`empt
 that can't work (no geometry to map), and pluginlib registration reconfirmed end-to-end against
 the real controller_server log. Full-workspace rebuild plus every prior phase's test suite
 re-run clean (30 tests total, no regression).
+
+**v1.15 changes (2026-07-23)**: Phase 8 rescoped before implementation, per review, in three
+concrete ways plus one more found while pinning them (§4.7 has the full detail):
+1. The ONNX export is verified standalone in Python - three-way check (wrapper vs. original
+   checkpoint, ONNX Runtime vs. wrapper, batched-vs-sequential calling convention), all on real
+   varied joint states, plus a load check against the actual pinned C++ ONNX Runtime 1.20.1 -
+   **before any C++ adapter code is written**, so an export problem is caught in an hour, not
+   discovered after a day spent on the search loop. All three checks passed (max abs diffs
+   0.0 / 1.9e-7 / 2.4e-7).
+2. The action-match done-bar now requires adversarial cases - scenarios where the top two
+   candidates' values are genuinely close, mined from the reference implementation's own
+   `action_values`, not hand-picked - since an obviously-best action matches even with a wrong
+   discount factor or reward term.
+3. A dedicated test asserts the radius value actually reaching the network is `policy_radius_m`
+   (0.3), never `robot_collision_radius` (0.14) - Phase 2's undersized-radius bug is the
+   precedent for how quietly a wrong radius can propagate.
+4. **Found while verifying the network architecture, not anticipated going in**: reusing Phase
+   5/6's `ObservationBuilder` padding for `SarlAdapter` would be a real bug, not a style
+   mismatch - the network's masked-softmax attention excludes a human row only when its raw
+   attention score is exactly `0.0`, a property no padding convention guarantees by
+   construction. `SarlAdapter` gets its own unpadded, dynamic-`num_humans`-shaped input
+   construction instead, matching the reference's true variable-length behavior. A zero-humans
+   tick (possible via this project's own perception degradation model, never exercised by the
+   reference) falls back to the stop action as a deliberate, documented stopgap - full handling
+   belongs to Phase 9's `LOW_PERCEPTION_CONFIDENCE` OOD trigger.
+
+**v1.16 changes (2026-07-23)**: Phase 8 implemented and closed per the v1.15 rescope - full
+trail in `docs/phase8-findings.md`. All three pinned requirements verified with concrete
+numbers (export bit-close before any C++ code; 10 adversarial action-match cases down to a
+0.0018% top-two gap, one loosest-margin case's divergence independently confirmed as a genuine
+cross-platform floating-point boundary rather than a logic bug; `policy_radius`/`robot_radius`
+split asserted directly). `CrowdNavController` gained an `adapter_type` config switch
+(`PolicyAdapter` held as a base-class pointer, not a concrete `DummyAdapter`) and live
+perception wiring (`GroundTruthHumanSource`, fixing the `LifecycleNode` incompatibility Phase
+7 found and deferred, via a templated constructor). Live-verified in Gazebo with real
+pedestrians: goal reached, no fallback triggers, zero call-site changes needed to switch
+adapters. **The most consequential finding of the phase**: the checkpoint's own source repo
+silently FOV-filters and augments its human list inside `JointState.__init__` before SARL ever
+sees it (an Intel D435I-simulating filter, this repo's own addition on top of upstream
+CrowdNav) - found because a naive fixture comparison produced a false mismatch. Fixed the
+fixture to capture what `predict()` actually evaluated; this project's own `SarlAdapter` does
+not yet replicate an equivalent filter matching this robot's actual sensor, a real gap flagged
+for resolution before Phase 10's evaluation numbers are treated as meaningful. Full-workspace
+rebuild plus every prior phase's test suite re-run clean (39 tests total, no regression).
 
 ---
 
@@ -624,10 +668,10 @@ Everything below lives in one colcon workspace, `crowd_nav_ws/src/`.
 | `crowd_nav_gazebo` | World files (open-arena, tugbot_depot integration, compact depot if needed), spawn launch | No |
 | ~~`crowd_nav_msgs`~~ | **Superseded (v1.9), not built as planned** — `AddZone`/`RemoveZone` ended up defined inside `crowd_nav_zones` (Phase 3) and the ground-truth human-state message (`Pedestrian`/`PedestrianArray`) inside `crowd_nav_pedestrians` (Phase 4), colocated with their producing package rather than centralized. Standard ROS2 practice for a project this size, and it happened without the plan saying so first - correcting here rather than leaving the table wrong. `InterventionEvent` (Phase 9, not yet built) will need a home decided when that phase starts - likely `crowd_nav_safety_supervisor` itself, for the same colocation reason, unless a second consumer emerges first. | — |
 | `crowd_nav_onnxruntime_vendor` | Minimal vendored ONNX Runtime CMake package | No |
-| `crowd_nav_perception` | **Built and closed in Phase 5.** `HumanStateSource` interface, `GroundTruthHumanSource` (+ degradation model, consuming `crowd_nav_pedestrians`' `PedestrianArray` via the message-adapter seam in §4.1), `TrackedHumanSource` stub | No |
+| `crowd_nav_perception` | **Built and closed in Phase 5.** `HumanStateSource` interface, `GroundTruthHumanSource` (+ degradation model, consuming `crowd_nav_pedestrians`' `PedestrianArray` via the message-adapter seam in §4.1), `TrackedHumanSource` stub. **Production constructor templated in Phase 8** so it works from any `nav2_core` plugin's `LifecycleNode`, not just `rclcpp::Node` (see §4.7). | No |
 | `crowd_nav_observation` | **Built and closed in Phase 5.** Observation builder library, canonical `WorldState` struct | No |
-| `crowd_nav_policy_adapters` | **`PolicyAdapter` interface, candidate action-space/propagation, shape validation, `DummyAdapter` built and closed in Phase 6.** `SarlAdapter` still to come in Phase 8. | Onnxruntime only |
-| `crowd_nav_controller` | **Built and closed in Phase 7, see §4.6.** `nav2_core::Controller` plugin: hold-last-action rate handling, inference-latency watchdog structured for Phase 9, failover to a genuinely embedded `nav2_mppi_controller::MPPIController` via pluginlib (not accel clamping/smoothing - `nav2_velocity_smoother`, already in this project's bringup, already owns that). | Yes (nav2_core) |
+| `crowd_nav_policy_adapters` | **`PolicyAdapter` interface, candidate action-space/propagation, shape validation, `DummyAdapter` (Phase 6), `SarlAdapter` built and closed in Phase 8, see §4.7.** Real SARL value net (`models/sarl_value_net.onnx`), production `rotate()`/`computeImmediateReward()`. | Onnxruntime only |
+| `crowd_nav_controller` | **Built and closed in Phase 7/8, see §4.6/§4.7.** `nav2_core::Controller` plugin: hold-last-action rate handling, inference-latency watchdog structured for Phase 9, failover to a genuinely embedded `nav2_mppi_controller::MPPIController` via pluginlib (not accel clamping/smoothing - `nav2_velocity_smoother` already owns that), `adapter_type` config switch (`dummy`/`sarl`), live perception via `GroundTruthHumanSource`. | Yes (nav2_core) |
 | `crowd_nav_safety_supervisor` | Forward-sim, costmap/keepout check, OOD detector, fallback trigger, intervention logging | Yes (costmap_2d) |
 | ~~`crowd_nav_costmap_filters`~~ | **Built as `crowd_nav_zones` instead (Phase 3)** - same responsibility (zone-manager node: mask gen + reload via a real `map_server` instance + `AddZone`/`RemoveZone`, stock `KeepoutFilter`), different name chosen during implementation; correcting the table rather than leaving two names for one package. | Yes (map_server/costmap_2d) |
 | `crowd_nav_pedestrians` | **Rescoped v1.7 - HuNav dropped entirely, see §1.2.** A single deterministic seeded social-force ROS node (`reactive`/`non_reactive` as one config flag), ground-truth robot pose injected via a Gazebo `PosePublisher` plugin (not `/odom`), plus an off-by-default visual-only Gazebo actor mirror node. Built and closed in Phase 4. | No (Gazebo only, no HuNav dependency) |
@@ -898,24 +942,53 @@ correct. Full trail: `docs/phase7-findings.md`.
   end against the real controller_server log. Full-workspace rebuild plus every prior phase's
   test suite re-run clean (30 tests total, no regression).
 
-**Phase 8 — SARL ONNX export + SarlAdapter**
+**Phase 8 — SARL ONNX export + SarlAdapter (rescoped v1.15, see §4.7) — DONE, done-bar met**
 Real export of the Phase 0-validated checkpoint (strip the debug `.cpu().numpy()` line, export
-the value net, verify bit-close against the original PyTorch model), then `SarlAdapter`
-implementing the candidate-action
-generation + one-step propagation + batched inference + argmax from §1.4, including the
-`policy_radius`/`robot_radius` split from §4.3. Swapped in for `DummyAdapter` via a config
-change only (adapter type + model path) — no changes to the Phase 7 controller plugin, which
+the value net, verify bit-close against the original PyTorch model **in Python, before any C++
+adapter code is written**), then `SarlAdapter` implementing the candidate-action generation +
+one-step propagation + batched inference + argmax from §1.4, including the `policy_radius`/
+`robot_radius` split from §4.3 and an **unpadded, dynamic-shape** input construction (§4.7 -
+`ObservationBuilder`'s fixed-`max_humans` padding is `DummyAdapter`-specific and would be a
+real correctness bug here). Swapped in for `DummyAdapter` via a new `adapter_type` config
+switch (`"dummy"` | `"sarl"`) — no changes to the Phase 7 controller plugin's call sites, which
 is itself a live test of the adapter-swap promise the whole `PolicyAdapter` design exists for,
-before HEIGHT or ORACLE-Nav ever show up. **Done:** a standalone C++ harness (no Nav2, no
-Gazebo) feeds hand-crafted scenarios through `SarlAdapter` and its chosen action matches the
-original Python SARL's action on the same inputs; flipping the Phase 7 controller's config
-from `dummy` to `sarl` requires zero code changes and produces visibly SARL-like behavior
-(yielding, path curvature) instead of the dummy heuristic. `DummyAdapter` **stays in the tree
-after this phase**, not deleted once real weights land — it's the fastest possible smoke test
-for the whole inference path (no checkpoint, no PyTorch, no real policy) and the tool of choice
-for isolating "is the plumbing still working" from "is the policy behaving correctly" if a
-later integration (Phase 12's HEIGHT) breaks something. Kept as a permanent fixture in the test
-suite, not a Phase 6 throwaway.
+before HEIGHT or ORACLE-Nav ever show up. Full trail: `docs/phase8-findings.md`.
+
+**Done, verified with direct measurement (docs/phase8-findings.md has the full trail):**
+- The ONNX export verified bit-close against the original PyTorch checkpoint in Python, on real
+  varied joint states, *before* any C++ adapter code (max abs diffs: 0.0 wrapper-vs-original,
+  1.9e-7 ONNX-vs-wrapper, 2.4e-7 batched-vs-sequential) — plus a load check against the actual
+  pinned C++ ONNX Runtime 1.20.1, not just the Python-side runtime used for the export check.
+- A standalone C++ harness (no Nav2, no Gazebo) feeds 15 scenarios through `SarlAdapter` and its
+  chosen action matches the original Python SARL's action — **including 10 adversarial cases
+  mined from the reference's own `action_values`** (top-two gaps from 0.0018% to 0.05%), not
+  just cases where one action is obviously best. One case at the loosest adversarial margin
+  (0.05%) diverged; verified from the C++ side too that the two candidates' network values are
+  themselves within ~1% at that exact case — a genuine cross-platform floating-point precision
+  boundary (PyTorch/numpy vs. ONNX Runtime CPU reduction order), not a logic bug, since 9 other
+  cases with tighter margins (down to 0.0018%, 25x tighter) matched exactly.
+- A dedicated test asserts the self-state radius value actually reaching the network is
+  `policy_radius_m` (the training value), never `robot_collision_radius` (the URDF value).
+- Flipping the Phase 7 controller's `adapter_type` from `dummy` to `sarl` required zero call-site
+  changes; live-verified end to end in Gazebo with real pedestrians present (Phase 4's
+  simulation, real perception via `GroundTruthHumanSource`) — goal reached, no fallback triggers.
+- **A major architectural finding, not anticipated going in**: the checkpoint's own source repo
+  applies a simulated depth-camera FOV filter and injects a synthetic "dummy" human inside its
+  own `JointState` construction *before* SARL ever sees the human list — found while generating
+  the action-match fixture, when a naive apples-to-oranges comparison (this project's raw
+  perceived humans vs. the reference's filtered-and-augmented list) produced a false mismatch.
+  Fixed the fixture to capture what `predict()` actually evaluated; **this project's
+  `SarlAdapter` does not yet replicate any FOV/range filter of its own** — a real, explicitly
+  flagged gap (not this checkpoint source's specific D435I spec, which doesn't match this
+  robot's actual ~180°/8m sensor, but the *principle* of restricting to what the robot could
+  actually perceive) worth resolving before Phase 10's evaluation numbers are treated as
+  meaningful, most naturally alongside Phase 9's own perception-awareness work.
+- `DummyAdapter` **stays in the tree after this phase**, not deleted once real weights land —
+  it's the fastest possible smoke test for the whole inference path (no checkpoint, no PyTorch,
+  no real policy) and the tool of choice for isolating "is the plumbing still working" from "is
+  the policy behaving correctly" if a later integration (Phase 12's HEIGHT) breaks something.
+  Kept as a permanent fixture in the test suite, not a Phase 6 throwaway — Phase 7 already found
+  a real bug in it this way (`docs/phase7-findings.md`), not a hypothetical one.
 
 **Phase 9 — Safety supervisor**
 **Principle carried forward from Phase 2** (`docs/phase2-findings.md`, "don't reimplement what
@@ -1377,6 +1450,96 @@ controller plugin's actual source rather than the docs before writing any code:
   failover is visible in the raw stream at the trigger point, and the smoothed stream's
   tick-to-tick velocity change never exceeds the configured `max_accel`/`max_decel` even across
   that transition.
+
+### 4.7 SarlAdapter design (added v1.15, before Phase 8 implementation)
+
+Rescoped before implementation, per review, in the ways below. This is the highest-uncertainty
+phase remaining — everything under it is proven; what's unproven is whether the C++
+reimplementation of SARL's candidate-action search matches the Python original. Three things
+pinned before writing any adapter code, plus one more found in the process of pinning them.
+
+**Export verified standalone in Python, before any C++ code, per the explicit requirement.**
+Loaded the real `il_model.pth` checkpoint into the actual `SARL`/`ValueNetwork` classes
+(re-cloned `tkkim-robot/Gazebo-CrowdNav` at the pinned commit), wrapped the network to drop the
+non-exportable debug line (`self.attention_weights = weights[0, :, 0].data.cpu().numpy()` -
+found by reading `sarl.py` directly; the numpy conversion is on an instance attribute that
+never feeds the returned value, so dropping it is safe, not a behavior change), and exported to
+ONNX (opset 18, dynamic `batch` and `num_humans` axes - see the no-padding finding below).
+Checked three things, all on real varied synthetic joint states (1/3/5/8 humans, several
+seeds each), not zeros:
+1. Wrapper (PyTorch, debug line dropped) vs. the original checkpoint's `ValueNetwork` (PyTorch,
+   debug line intact): **max abs diff = 0.0** - dropping the debug line changes nothing.
+2. ONNX Runtime output vs. the wrapper (PyTorch): **max abs diff = 1.9e-7** - the actual export
+   fidelity check the requirement asked for, at floating-point noise level.
+3. **Batching all 81 candidates in one `(81, num_humans, 13)` call vs. calling the network once
+   per candidate with `batch=1`: max abs diff = 2.4e-7.** This is the reference's own real
+   calling convention (`multi_human_rl.py`'s `predict()` calls `self.model(rotated_batch_input)`
+   once per action, `batch_size=1`) - confirms the plan's "batched inference" design is
+   mathematically identical to the reference's one-candidate-at-a-time convention (no
+   cross-batch-element coupling in `ValueNetwork.forward()`'s attention/mean pooling, which
+   operate per batch index via `view`/`keepdim`), not just "close enough."
+Also confirmed the exported model loads and runs correctly under this project's actual pinned
+ONNX Runtime **1.20.1** (not just the newer Python-side runtime used for the export check
+itself) - a real, previously-bitten class of version mismatch (§1.3).
+
+**Verified network architecture and reward/discount formula against the checkpoint's own
+config, not memory**: `crowd_nav/data_sarl/output/policy.config`'s `[sarl]` section -
+`mlp1_dims=150,100`, `mlp2_dims=100,50`, `attention_dims=100,100,1`, `mlp3_dims=150,100,100,1`,
+`with_global_state=true`, `with_om=false`; `[rl]` `gamma=0.9`. `self_state_dim=6`,
+`human_state_dim=7`, `input_dim=13` (`cadrl.py`) - matches the rotated feature layout exactly
+(§4.1.1: 6 self fields + 7 human fields). `multi_human_rl.py`'s `compute_reward()`, read
+directly: collision (`dist < 0` between propagated self and any human, using `nav.radius +
+human.radius`) → `-0.25`; else goal reached (`dist to goal < nav.radius`) → `1`; else
+`dmin < 0.2` → `(dmin - 0.2) * 0.5 * time_step`; else `0`. **Worth flagging**: the `0.2`/`0.5`
+discomfort constants are hardcoded literally in this function, not read from `env.config`'s
+`discomfort_dist`/`discomfort_penalty_factor` keys despite matching them in this specific
+config - the C++ reimplementation hardcodes `0.2`/`0.5` too, matching what the code actually
+does, not what the config file's naming implies is configurable. Final value:
+`reward + gamma^(time_step * v_pref) * network_value`, argmax over all 81 candidates.
+
+**No padding for `SarlAdapter` - a real correctness finding, not a style choice.** Phase 5/6's
+`ObservationBuilder` pads to a fixed `max_humans` for `DummyAdapter`'s static-shape ONNX model.
+Reusing that padding for `SarlAdapter` would be a real bug: the network's masked-softmax
+attention (`scores_exp = torch.exp(scores) * (scores != 0).float()`) excludes a human row only
+when its *raw attention score* is *exactly* `0.0` - not a property any padding convention
+(ours or otherwise) can guarantee by construction. Feeding padded rows to the real network
+risks the padding silently influencing the value estimate instead of being ignored. Fixed by
+giving `SarlAdapter` its own unpadded per-human row construction (self 9 fields + each real
+human's 5 fields, closest-first for consistency with `ObservationBuilder` but no padding past
+the actual count) and exporting/consuming the ONNX model with a **dynamic** `num_humans` axis,
+matching the reference's own variable-length behavior exactly rather than approximating it.
+`ObservationBuilder` remains `DummyAdapter`-specific; it is not reused here.
+**Zero-humans edge case**: the reference never exercises `predict()` with zero humans
+(`env.config`'s `human_num=5` is fixed), but this project's own perception degradation model
+(Phase 5) can transiently drop every detection in one tick - a genuine, if rare, possibility
+here that doesn't exist in the reference's world. Attention pooling over zero humans is
+degenerate (softmax normalization divides by a zero sum). `SarlAdapter` handles this as an
+explicit, documented special case: skip the network entirely and return the stop action for
+that tick - the conservative-safe default when perception has nothing to report, not "drive
+blindly." A fuller response belongs to Phase 9's OOD detector (`LOW_PERCEPTION_CONFIDENCE` is
+already one of its planned trigger categories, §4.4) - this is a deliberate stopgap, not that.
+
+**Adversarial action-match test, mined from the reference implementation itself, not guessed.**
+"Chosen action matches Python SARL" only stresses a wrong discount factor or reward term if the
+top two candidates' values are genuinely close - an obviously-best action matches even with a
+wrong `gamma`. Rather than hand-pick scenarios and hope, the fixture generator runs the real
+`predict()` over many synthetic scenarios, captures the full `action_values` array `predict()`
+already stores, and keeps the ones where the top two candidates' values differ by less than a
+small fraction of a percent - these are exactly where a subtle discrepancy in the immediate-
+reward term or the `gamma^(time_step * v_pref)` discount would surface as a different argmax,
+not just a different score. Both adversarial (near-tied) and typical (clear-margin) cases are
+checked; the done-bar requires the chosen action to match on both.
+
+**`policy_radius`/`robot_radius` split, asserted directly, not just configured correctly by
+construction.** §4.3's split already exists (`CandidateActionSpaceConfig::policy_radius_m`,
+wired into `RobotSelfState::radius` since Phase 7's `CrowdNavController::buildWorldState()`) -
+but Phase 2's undersized-`robot_radius` bug (§4.3) shows how quietly a wrong radius propagates
+silently until something concrete fails. A dedicated test asserts the *actual value reaching
+the network* (the self-state radius field in `SarlAdapter`'s raw per-candidate row, post-
+rotation) equals `policy_radius_m` (0.3, the training value) and is never equal to
+`robot_collision_radius` (0.14, the URDF value) - a regression here would silently feed the
+network an out-of-distribution self-radius without any load-time error, the exact quiet-failure
+shape Phase 2 already demonstrated once.
 
 ---
 
