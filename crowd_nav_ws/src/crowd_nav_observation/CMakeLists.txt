@@ -10,7 +10,9 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(crowd_nav_perception REQUIRED)
 
-add_library(${PROJECT_NAME}
+# SHARED - see crowd_nav_perception/CMakeLists.txt's comment: this workspace's CMake default
+# (static, no -fPIC) can't link into crowd_nav_controller's pluginlib .so.
+add_library(${PROJECT_NAME} SHARED
   src/observation_builder.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC

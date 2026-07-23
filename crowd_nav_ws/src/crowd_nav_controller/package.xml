@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypeins="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>crowd_nav_controller</name>
+  <version>0.1.0</version>
+  <description>
+    Phase 7: nav2_core::Controller plugin (CrowdNavController) - hold-last-action rate
+    handling, an inference-latency watchdog structured to also cover Phase 9's supervisor
+    check, and failover to a genuinely embedded nav2_core::Controller fallback loaded via
+    pluginlib. Validated against Phase 6's DummyAdapter, not SARL (IMPLEMENTATION_PLAN.md S3
+    Phase 7, S4.6).
+  </description>
+  <maintainer email="ashwinder4377@gmail.com">ashwinder</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>nav2_core</depend>
+  <depend>nav2_costmap_2d</depend>
+  <depend>nav2_util</depend>
+  <depend>pluginlib</depend>
+  <depend>angles</depend>
+  <depend>ament_index_cpp</depend>
+  <depend>crowd_nav_observation</depend>
+  <depend>crowd_nav_policy_adapters</depend>
+  <depend>crowd_nav_onnxruntime_vendor</depend>
+
+  <exec_depend>nav2_mppi_controller</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <nav2_core plugin="${prefix}/crowd_nav_controller_plugin.xml" />
+  </export>
+</package>

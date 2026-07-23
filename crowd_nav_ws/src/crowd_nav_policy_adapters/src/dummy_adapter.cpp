@@ -64,9 +64,19 @@ Velocity2D DummyAdapter::selectAction(const TensorBundle & model_outputs, const 
   const double desired_heading =
     std::atan2(state.robot.gy - state.robot.py, state.robot.gx - state.robot.px);
 
+  // Index 0 is always the stop action (candidate_action_space.hpp), whose (vx,vy)=(0,0) gives
+  // atan2(0,0)==0 - a degenerate "heading" that isn't really one. Found the hard way (Phase 7
+  // live Gazebo verification, docs/phase7-findings.md): comparing it against desired_heading
+  // like any other candidate means it wins by tie whenever the goal is roughly ahead of the
+  // robot (desired_heading ~ 0) - the COMMON case, not a rare edge case - leaving the robot
+  // permanently stopped instead of driving toward the goal. This heuristic only needs to prove
+  // data moves through the pipeline correctly (S3 Phase 6); deciding when to stop at the goal
+  // is the goal checker/BT's job, not this adapter's, so the stop action is deliberately
+  // excluded from the search entirely rather than special-cased.
   double best_diff = std::numeric_limits<double>::infinity();
-  CandidateAction best{0.0, 0.0};
-  for (const auto & candidate : last_candidates_) {
+  CandidateAction best = last_candidates_.size() > 1 ? last_candidates_[1] : last_candidates_[0];
+  for (size_t i = 1; i < last_candidates_.size(); ++i) {
+    const auto & candidate = last_candidates_[i];
     const double heading = std::atan2(candidate.vy, candidate.vx);
     const double diff = std::fabs(wrapToPi(heading - desired_heading));
     if (diff < best_diff) {

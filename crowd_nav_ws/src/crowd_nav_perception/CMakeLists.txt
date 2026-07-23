@@ -11,7 +11,11 @@ find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(crowd_nav_pedestrians REQUIRED)
 
-add_library(${PROJECT_NAME}
+# SHARED: this workspace's CMake default is static, which lacks -fPIC and can't be linked into
+# a downstream .so - found the hard way when crowd_nav_controller (a pluginlib plugin, which
+# MUST be a real .so for dlopen()) failed to link against this package as a static dependency
+# (IMPLEMENTATION_PLAN.md S4.6/Phase 7 findings).
+add_library(${PROJECT_NAME} SHARED
   src/ground_truth_human_source.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC

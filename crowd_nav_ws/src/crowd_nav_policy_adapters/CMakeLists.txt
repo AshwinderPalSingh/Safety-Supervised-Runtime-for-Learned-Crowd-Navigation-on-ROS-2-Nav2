@@ -13,7 +13,12 @@ find_package(crowd_nav_onnxruntime_vendor REQUIRED)
 find_package(yaml_cpp_vendor REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
-add_library(${PROJECT_NAME}
+# SHARED - see crowd_nav_perception/CMakeLists.txt's comment: this workspace's CMake default
+# (static, no -fPIC) can't link into crowd_nav_controller's pluginlib .so. Also the yaml-cpp
+# relocation error this exact combination surfaced (static lib pulling in yaml-cpp's
+# exception type without -fPIC) that made this bug's root cause obvious rather than a bare
+# "recompile with -fPIC" linker error against our own code.
+add_library(${PROJECT_NAME} SHARED
   src/candidate_action_space.cpp
   src/candidate_propagation.cpp
   src/shape_validation.cpp

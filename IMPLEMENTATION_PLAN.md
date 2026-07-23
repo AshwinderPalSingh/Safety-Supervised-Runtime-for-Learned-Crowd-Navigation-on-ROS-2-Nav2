@@ -1,9 +1,9 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.12 (2026-07-21, updated 2026-07-23) — Phase 6 done
+## Implementation Plan v1.14 (2026-07-21, updated 2026-07-23) — Phase 7 done
 
 This document is the living plan for the project, updated as each phase lands rather than
-frozen at the start. Phases 0–6 are done as of this revision (§3 has current status per
-phase); everything from Phase 7 onward is still plan, not implementation.
+frozen at the start. Phases 0–7 are done as of this revision (§3 has current status per
+phase); everything from Phase 8 onward is still plan, not implementation.
 
 **v1.1 changes** (post-review, same day): inserted a synthetic-adapter phase before SARL to
 decouple runtime-plumbing risk from SARL-search-correctness risk (§3, new Phase 6); confirmed
@@ -196,6 +196,52 @@ phase's test suite re-run clean (25 tests total, no regression). One environment
 recorded, not silently worked around: this machine's PyTorch (2.13) dynamo-based ONNX exporter
 needs `onnxscript`, not installed by default here - documented in the findings so a fresh
 machine doesn't hit the same failure unexplained.
+
+**v1.13 changes (2026-07-23)**: Phase 7 rescoped before implementation, per review, in three
+concrete ways (§4.6 has the full detail):
+1. The watchdog is structured around the full "produce a command we're willing to send" path
+   from day one - inference *and* a supervisor-check call site, the latter a no-op placeholder
+   until Phase 9 exists - so Phase 9 slots into an existing boundary instead of forcing a
+   rework of Phase 7's own timing code.
+2. The failover done-bar now requires verifying the *transition*, not just the trigger:
+   capturing both the raw controller output and the post-smoother command across an injected
+   stall, confirming the handover never exceeds the robot's configured accel/decel limits -
+   observed directly in Gazebo, not inferred later from Phase 10 results.
+3. Checked pluginlib registration/lifecycle/parameter conventions against a real controller
+   plugin's actual source (`nav2_rotation_shim_controller`, fetched at the pinned Humble
+   commit) before writing any code, given the `::` vs `/` naming inconsistency that already
+   bit this project once in Phase 2. Found real precedent for embedding a second
+   `nav2_core::Controller` instance via pluginlib as a delegate/fallback - `CrowdNavController`
+   uses this exact mechanism to embed real `nav2_mppi_controller::MPPIController` as its
+   fallback, rather than reimplementing a worse one.
+
+Also found before implementation, not after: this project's own `nav2_velocity_smoother` is
+already configured and lifecycle-managed (`crowd_nav_bringup/config/nav2_params.yaml`), which
+means the "velocity smoothing / acceleration clamping" duty this plan's §3 originally assigned
+to the controller plugin itself is already handled downstream - `CrowdNavController`'s own
+scope narrows to hold-last-action and the watchdog/failover decision, per the "don't
+reimplement the stack" principle carried forward since Phase 2/3/9.
+
+**v1.14 changes (2026-07-23)**: Phase 7 implemented and closed per the v1.13 rescope - full
+trail in `docs/phase7-findings.md`. New package `crowd_nav_controller`: `ControllerDecisionCore`
+(bounded-wait watchdog, hold-last-action, race-avoidance - 4/4 unit tests green) and
+`CrowdNavController` (embeds `nav2_mppi_controller::MPPIController` via pluginlib exactly the
+way `nav2_rotation_shim_controller` does, verified against that package's real source). Live
+Gazebo verification met every done-bar item: end-to-end `NavigateToPose` succeeded with
+`DummyAdapter`; a stall injection triggered failover within the same decision cycle (confirmed
+via added source-switch logging); the failover *transition* was captured quantitatively - the
+raw stream showed a real single-tick discontinuity (-0.120 m/s linear, +0.677 rad/s angular)
+that the already-configured `nav2_velocity_smoother` bounded to exactly its configured
+`max_accel`/`max_decel` per-tick limits in the stream the robot actually executes. Found and
+fixed six real integration gaps along the way, none catchable by unit tests alone: a static-
+library pluginlib load failure (fixed by building `crowd_nav_controller` and its three library
+dependencies `SHARED`), a launch-substitution string silently not resolving inside a raw YAML
+params file, a `DummyAdapter` heading tie-break bug that left the robot motionless whenever the
+goal was roughly ahead (the common case), stale runtime parameters that `ros2 param set`
+couldn't actually change (fixed with a dynamic parameter callback), a SLAM+`empty.sdf` pairing
+that can't work (no geometry to map), and pluginlib registration reconfirmed end-to-end against
+the real controller_server log. Full-workspace rebuild plus every prior phase's test suite
+re-run clean (30 tests total, no regression).
 
 ---
 
@@ -581,7 +627,7 @@ Everything below lives in one colcon workspace, `crowd_nav_ws/src/`.
 | `crowd_nav_perception` | **Built and closed in Phase 5.** `HumanStateSource` interface, `GroundTruthHumanSource` (+ degradation model, consuming `crowd_nav_pedestrians`' `PedestrianArray` via the message-adapter seam in §4.1), `TrackedHumanSource` stub | No |
 | `crowd_nav_observation` | **Built and closed in Phase 5.** Observation builder library, canonical `WorldState` struct | No |
 | `crowd_nav_policy_adapters` | **`PolicyAdapter` interface, candidate action-space/propagation, shape validation, `DummyAdapter` built and closed in Phase 6.** `SarlAdapter` still to come in Phase 8. | Onnxruntime only |
-| `crowd_nav_controller` | `nav2_core::Controller` plugin: rate handling, accel clamping, latency watchdog + failover | Yes (nav2_core) |
+| `crowd_nav_controller` | **Built and closed in Phase 7, see §4.6.** `nav2_core::Controller` plugin: hold-last-action rate handling, inference-latency watchdog structured for Phase 9, failover to a genuinely embedded `nav2_mppi_controller::MPPIController` via pluginlib (not accel clamping/smoothing - `nav2_velocity_smoother`, already in this project's bringup, already owns that). | Yes (nav2_core) |
 | `crowd_nav_safety_supervisor` | Forward-sim, costmap/keepout check, OOD detector, fallback trigger, intervention logging | Yes (costmap_2d) |
 | ~~`crowd_nav_costmap_filters`~~ | **Built as `crowd_nav_zones` instead (Phase 3)** - same responsibility (zone-manager node: mask gen + reload via a real `map_server` instance + `AddZone`/`RemoveZone`, stock `KeepoutFilter`), different name chosen during implementation; correcting the table rather than leaving two names for one package. | Yes (map_server/costmap_2d) |
 | `crowd_nav_pedestrians` | **Rescoped v1.7 - HuNav dropped entirely, see §1.2.** A single deterministic seeded social-force ROS node (`reactive`/`non_reactive` as one config flag), ground-truth robot pose injected via a Gazebo `PosePublisher` plugin (not `/odom`), plus an off-by-default visual-only Gazebo actor mirror node. Built and closed in Phase 4. | No (Gazebo only, no HuNav dependency) |
@@ -812,15 +858,45 @@ closest to the goal direction) just to prove data moves correctly end-to-end. Fu
 - Two independent `DummyAdapter` instances given the same synthetic input produce
   byte-identical output.
 
-**Phase 7 — Controller plugin**
-`nav2_core::Controller` plugin: hold-last-action + velocity smoothing across the 4 Hz/20 Hz
-mismatch, acceleration clamping to configured robot limits, inference-latency watchdog
-(covering supervisor-check time too, per §1.7) with failover to MPPI. Built and validated
-against `DummyAdapter` from Phase 6, not SARL — this proves the controller plugin's rate
-handling and watchdog/failover mechanics independently of whether SARL's search logic is
-correct. **Done:** a `policy_raw` config running `DummyAdapter` drives the robot end-to-end in
-Nav2 in the open-arena world; artificially stalling inference demonstrably triggers failover
-within one watchdog window.
+**Phase 7 — Controller plugin (rescoped v1.13, see §4.6) — DONE, done-bar met**
+`nav2_core::Controller` plugin (`CrowdNavController`): hold-last-action across the policy/
+controller-tick rate mismatch, and an inference-latency watchdog (structured now to cover
+supervisor-check time too, per §1.7, even though Phase 9's supervisor is a no-op placeholder
+until it exists) with failover to a **genuinely embedded `nav2_mppi_controller::MPPIController`
+instance** loaded via pluginlib — not a hand-rolled fallback, and not a second reimplementation
+of velocity smoothing/acceleration clamping, which `nav2_velocity_smoother` already does,
+already configured, downstream of every command regardless of source (§4.6). Built and
+validated against `DummyAdapter` from Phase 6, not SARL — this proves the controller plugin's
+rate handling and watchdog/failover mechanics independently of whether SARL's search logic is
+correct. Full trail: `docs/phase7-findings.md`.
+
+**Done, verified with direct measurement (docs/phase7-findings.md has the full trail):**
+- A `policy_raw` config running `DummyAdapter` drives the robot end-to-end in Nav2, in Gazebo
+  (`NavigateToPose` to a real goal succeeded).
+- Artificially stalling inference (a live-settable diagnostic parameter,
+  `FollowPath.debug_inject_decision_delay_s`) demonstrably triggers failover, confirmed via
+  edge-triggered source-switch logging within the same decision cycle the stall was injected.
+- **The failover *transition*, not just the trigger, verified quantitatively**: the raw
+  `controller_server` output showed a genuine single-tick discontinuity at the switch
+  (linear.x jumped -0.120 m/s, angular.z jumped +0.677 rad/s in one 0.05 s tick) that the
+  robot cannot execute instantaneously; the post-`nav2_velocity_smoother` stream — what the
+  robot actually receives — bounded the same transition to *exactly* the configured
+  `max_accel`/`max_decel` per-tick limits (0.075 m/s and 0.15 rad/s per tick, confirmed to the
+  decimal against the smoother's own config), not inferred from Phase 10 results.
+- The `ControllerDecisionCore` watchdog/hold-last-action/race-avoidance logic (§4.6) unit
+  tested directly against injected fake decision callables (controllable delay) — 4/4 green,
+  including a genuine bounded-wait proof (returns in <150 ms against a 200 ms-sleeping fake)
+  and a race-avoidance proof (a second decision never starts while one is still outstanding).
+- **Six real integration gaps found and fixed via the live verification, none catchable by unit
+  tests alone**: a static-vs-shared-library pluginlib load failure (the exact "library not
+  found" class of error flagged before starting), a launch-substitution string that silently
+  doesn't resolve inside a raw YAML params file, a `DummyAdapter` tie-break bug that picked the
+  stop action whenever the goal was roughly ahead of the robot (the common case, not an edge
+  case — the robot simply never moved), runtime parameters that were read once at `configure()`
+  and never refreshed by `ros2 param set`, a SLAM+`empty.sdf` pairing that can't work because
+  the "open-arena" world has no geometry to map, and reconfirming pluginlib registration end to
+  end against the real controller_server log. Full-workspace rebuild plus every prior phase's
+  test suite re-run clean (30 tests total, no regression).
 
 **Phase 8 — SARL ONNX export + SarlAdapter**
 Real export of the Phase 0-validated checkpoint (strip the debug `.cpu().numpy()` line, export
@@ -1202,6 +1278,105 @@ command interfaces and position/velocity state interfaces on `left_wheel_joint` 
 via `pluginlib`, and swap only the `<plugin>` tag (plus whatever serial/I2C params the ESP32
 interface needs) — `diff_drive_controller`, the URDF joint structure, and everything above the
 hardware layer is unchanged. Nothing beyond this contract is built now.
+
+### 4.6 Controller plugin design (added v1.13, before Phase 7 implementation)
+
+Rescoped before implementation, per review, in the ways below. This is the first phase
+producing a real `nav2_core` plugin — pluginlib registration, lifecycle transitions, and
+parameter declaration are three places Nav2 fails silently or with unhelpful errors, and the
+`::` vs `/` pluginlib naming inconsistency already hit once in Phase 2
+(`docs/phase2-findings.md`) lives in exactly this area. Checked against a real, working
+controller plugin's actual source rather than the docs before writing any code:
+
+- **Fallback is a genuinely embedded `nav2_core::Controller` instance, not a hand-rolled
+  simplified one** — reusing Nav2's own hardened MPPI rather than reimplementing a worse
+  version of it, per the principle carried forward since Phase 2/3/9
+  (`docs/phase2-findings.md`, "don't reimplement what the Nav2 stack already does better").
+  Precedent found and verified by fetching the actual source (not just the header) of
+  `nav2_rotation_shim_controller` at the pinned Humble commit: it holds a
+  `pluginlib::ClassLoader<nav2_core::Controller> lp_loader_{"nav2_core", "nav2_core::Controller"}`,
+  loads a second controller via `lp_loader_.createUniqueInstance(primary_controller)` (a string
+  parameter, `<plugin_name>.primary_controller`), and calls `configure()`/`activate()`/
+  `deactivate()`/`cleanup()` on it in lockstep with its own lifecycle calls — passing the
+  **same** `name` argument through, so the inner controller's parameters live in the same
+  `<plugin_name>.*` namespace as the wrapper's own, not a separate sub-namespace. This project's
+  `CrowdNavController` follows the identical mechanism, just with the trigger condition
+  inverted: `RotationShimController` delegates to the wrapped controller by default and does
+  its own thing (rotate-to-heading) only in a specific geometric condition; `CrowdNavController`
+  runs its own logic (policy inference) by default and delegates to the wrapped controller
+  (`nav2_mppi_controller::MPPIController`) only on watchdog trip. Concretely: `FollowPath`'s
+  `plugin:` value in `nav2_params.yaml` becomes `crowd_nav_controller::CrowdNavController`, and
+  a new `FollowPath.fallback_controller_plugin: "nav2_mppi_controller::MPPIController"`
+  parameter is added — **MPPI's existing ~30 tuning parameters
+  (`FollowPath.time_steps`, `FollowPath.model_dt`, etc.) are kept exactly as configured today**,
+  since the embedded instance reads them from the same `FollowPath.*` namespace it always has.
+- **`nav2_velocity_smoother` already exists in this project's own bringup, fully configured and
+  lifecycle-managed** (`crowd_nav_bringup/config/nav2_params.yaml`'s `velocity_smoother:`
+  section — `max_accel: [1.5, 0.0, 3.0]`, `max_decel: [-1.5, 0.0, -3.0]`,
+  `smoothing_frequency: 20.0` — already in the `lifecycle_manager`'s managed node list, already
+  wired downstream of `controller_server`'s raw `cmd_vel` output before it reaches
+  `/diff_drive_base_controller/cmd_vel_unstamped`). Missed on the first read of this plan's own
+  §3 Phase 7 text, which described the controller plugin doing "velocity smoothing... /
+  acceleration clamping" as if that duty were still unclaimed. It isn't: reimplementing
+  acceleration-limited smoothing inside `CrowdNavController` would duplicate what
+  `nav2_velocity_smoother` already does correctly, downstream, on every command regardless of
+  source (policy or fallback) - exactly the "don't reimplement the stack" principle again.
+  `CrowdNavController`'s own job narrows to: hold-last-action across the policy/controller rate
+  mismatch, and the watchdog/failover decision. Absolute velocity-magnitude clamping to
+  hardware limits (not smoothing - a different concern) is still applied at the source, since a
+  bad candidate should never be able to physically exceed the robot's hard limits regardless of
+  what downstream smoothing does. This finding directly shapes the failover-transition test
+  below: verify the *existing* smoother actually bounds the transition within real accel/decel
+  limits, not a from-scratch test of hand-rolled smoothing code that no longer exists.
+- **Decision logic is a separate, pure-C++, unit-testable core** (`ControllerDecisionCore`),
+  wrapped by a thin `nav2_core::Controller`-derived class that owns only ROS/lifecycle/pluginlib
+  concerns - the same split already used successfully for `GroundTruthHumanSource` (Phase 5,
+  two-constructor design specifically so degradation/latency logic didn't need a live ROS
+  pub/sub to test). `ControllerDecisionCore::decide(now, run_policy_decision)` is called once
+  per controller tick; `run_policy_decision` is an injected callable (the real path: build
+  candidate batch -> ONNX inference -> `selectAction`; test path: a fake with a controllable
+  delay) so the watchdog/hold-last-action mechanics are testable without a live Nav2 node,
+  costmap, tf buffer, or ONNX session.
+- **Watchdog implementation: a bounded wait, not after-the-fact measurement.** On a tick where a
+  fresh policy decision is due, `run_policy_decision` runs on `std::async(std::launch::async,
+  ...)`; the calling (controller) thread waits at most `watchdog_window_s` via
+  `future::wait_for()` before giving up and using the fallback for that tick - this is a real
+  timeout, not "call synchronously, then notice afterward that it took too long," which matters
+  because a synchronous call blocks the entire 20 Hz control loop for as long as inference takes
+  regardless of any deadline. **Honest limitation, stated rather than glossed over**: C++ has no
+  safe way to forcibly terminate a running thread, so a *genuinely hung* (not just slow) call
+  leaves an orphaned background thread running to completion rather than being killed outright.
+  Real ONNX CPU inference is a bounded deterministic computation (never truly infinite, per
+  Phase 0's sub-millisecond-to-low-single-digit-millisecond measurement), so this only matters
+  for a hypothetical hang, not the realistic slow-inference risk this phase is built for - a
+  process-level supervisor would be needed to cover true hangs, out of scope here, worth
+  flagging as a Phase 9/hardening follow-up rather than silently assumed covered.
+- **The orphaned-thread case creates a real data race if left unhandled, so it's handled
+  explicitly**: `DummyAdapter` (and `SarlAdapter` later) carry mutable per-decision state
+  (`last_candidates_`, stashed between `buildInputs()` and `selectAction()`) that is not
+  thread-safe against a second concurrent decision. If a decision times out, its background
+  thread may still be running against that same adapter instance. Fix: `ControllerDecisionCore`
+  tracks whether a previous decision's future is still outstanding and, if so, **does not start
+  a new one** even if a fresh decision is due - it stays in fallback until the outstanding
+  future resolves (checked with a non-blocking `wait_for(0s)` each tick), then resumes normal
+  decisioning. This is also the conservative-correct safety behavior on its own merits: if it's
+  not confirmed that a previous inference call has actually finished touching shared state,
+  continuing to trust the classical controller rather than gambling on concurrent adapter
+  access is the right default, independent of the race-avoidance rationale.
+- **Failover-transition done-bar, not just failover-trigger**: per review, "stalling inference
+  triggers failover within one watchdog window" checks the *trigger*, not what the robot
+  actually does at the handover moment - a held policy command for several ticks followed by an
+  abrupt MPPI command can itself be a velocity discontinuity the robot can't execute, and that's
+  exactly what `nav2_velocity_smoother` exists to bound. Done-bar item added: with the full
+  stack running in Gazebo (open-arena world, `policy_raw` config), inject a stall via a single
+  clearly-labeled test-only parameter (`FollowPath.debug_inject_decision_delay_s`, default
+  `0.0`, documented as a diagnostic knob, not a production one), and capture both
+  `cmd_vel` (`controller_server`'s raw output - where the actual command-source switch is
+  visible) and `/diff_drive_base_controller/cmd_vel_unstamped` (post-smoother - what the robot
+  actually executes) across the transition. Verify directly, not inferred from Phase 10 results:
+  failover is visible in the raw stream at the trigger point, and the smoothed stream's
+  tick-to-tick velocity change never exceeds the configured `max_accel`/`max_decel` even across
+  that transition.
 
 ---
 

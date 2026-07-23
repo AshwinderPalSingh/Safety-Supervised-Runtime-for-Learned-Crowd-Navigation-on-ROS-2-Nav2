@@ -88,12 +88,37 @@ controller_server:
       yaw_goal_tolerance: 0.15
       stateful: true
 
-    # MPPI is the classical baseline controller (baseline_mppi eval config,
-    # IMPLEMENTATION_PLAN.md S5.8) - velocity limits deliberately match the same
-    # policy-training-matched regime (S7) the learned-policy configs use, so all three
-    # controller configs are compared under the same dynamics limits.
+    # This is the `policy_raw` eval config (IMPLEMENTATION_PLAN.md S3 Phase 7/S4.6, Phase 10's
+    # eval matrix): CrowdNavController runs DummyAdapter (Phase 6) with hold-last-action rate
+    # handling and an inference-latency watchdog, failing over to a genuinely embedded
+    # nav2_mppi_controller::MPPIController (loaded via pluginlib, not reimplemented) on
+    # timeout. MPPI's own tuning below is UNCHANGED from when FollowPath was plain MPPI - it's
+    # what the embedded fallback_controller_plugin actually reads, under this same
+    # `FollowPath.*` namespace (verified against nav2_rotation_shim_controller's real source,
+    # which does the same same-name delegation - S4.6). A future `baseline_mppi` eval config
+    # (Phase 10) would point FollowPath.plugin straight at nav2_mppi_controller::MPPIController
+    # again, in a separate param overlay - not built yet, no mechanism for switching between
+    # the three eval configs exists until Phase 10.
     FollowPath:
-      plugin: "nav2_mppi_controller::MPPIController"
+      plugin: "crowd_nav_controller::CrowdNavController"
+      fallback_controller_plugin: "nav2_mppi_controller::MPPIController"
+      # Left empty deliberately: nav2_params.yaml is loaded as a raw params file with no
+      # launch-substitution preprocessing, so "$(find-pkg-share ...)" would NOT be resolved
+      # here (verified against how this project's own launch files pass this file to
+      # Node(parameters=[...])) - CrowdNavController resolves a portable default
+      # (crowd_nav_policy_adapters's own installed models/dummy_policy.onnx) when this is
+      # empty, the same way it does for policy_adapter_config_path.
+      onnx_model_path: ""
+      # Leaves headroom inside the 0.05s tick period (controller_frequency: 20.0 above) for
+      # whatever else the tick does, including Phase 9's supervisor check once it exists
+      # (IMPLEMENTATION_PLAN.md S1.7/S4.6).
+      watchdog_window_s: 0.03
+      # Test-only diagnostic knob (S4.6), 0.0 = inert. Set > 0 only to manually exercise the
+      # watchdog/failover path live; never a normal-operation value.
+      debug_inject_decision_delay_s: 0.0
+      max_linear_vel_mps: 1.0
+      min_linear_vel_mps: -0.3
+      max_angular_vel_rps: 2.0
       time_steps: 40
       model_dt: 0.05
       batch_size: 1000

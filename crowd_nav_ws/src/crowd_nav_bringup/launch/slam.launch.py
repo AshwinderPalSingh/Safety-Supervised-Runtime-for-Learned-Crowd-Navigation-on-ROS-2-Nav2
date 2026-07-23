@@ -1,12 +1,17 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    # Overridable so SLAM mode can also be exercised in the open-arena world (empty.sdf,
+    # IMPLEMENTATION_PLAN.md S3 Phase 6/7 done-bars) without a pre-built map, not just the
+    # structured depot - was hardcoded before, matching amcl.launch.py's `map` arg pattern.
+    world_file_arg = DeclareLaunchArgument('world_file', default_value='depot_scaled.sdf')
+
     spawn = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([
@@ -14,7 +19,7 @@ def generate_launch_description():
             ])
         ),
         launch_arguments=[
-            ('world_file', 'depot_scaled.sdf'),
+            ('world_file', LaunchConfiguration('world_file')),
             ('spawn_x', '-3.0'),
             ('spawn_y', '0.0'),
             ('spawn_yaw', '0.0'),
@@ -91,6 +96,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        world_file_arg,
         spawn,
         zones,
         slam_toolbox,

@@ -21,6 +21,13 @@ struct CandidateActionSpaceConfig
   double time_step_s = 0.25;
   size_t max_humans = 5;
   double human_radius_m = 0.3;
+  // Robot self-state constants fed to the network (RobotSelfState::radius/v_pref) - matched to
+  // CrowdNav's training distribution, not the real robot's physical size/speed (S4.3's
+  // policy_radius/robot_radius split). Added v1.13 (Phase 7) so the controller plugin and
+  // Phase 8's SarlAdapter share exactly one source for these instead of each hand-typing 0.3/
+  // 1.0 separately.
+  double policy_radius_m = 0.3;
+  double policy_v_pref_mps = 1.0;
 
   // Candidate count = speed_samples * rotation_samples + 1 (the +1 is the stop action) -
   // computed here, never hand-typed at a call site.

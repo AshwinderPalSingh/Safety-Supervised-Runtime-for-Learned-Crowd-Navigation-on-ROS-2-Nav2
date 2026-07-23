@@ -23,7 +23,7 @@ shells pick it up automatically; only needed manually in non-interactive/scripte
 `scripts/check_dds_health.sh` and `scripts/ros2_teardown.sh` provide an automated dirty-state
 check and safe cleanup regardless of which RMW is active - see Phase 2 findings for both.
 
-**Status**: Phase 6 of 12 complete. Phase 2: baseline Nav2 + AMCL + SLAM, 5/5 goals both modes,
+**Status**: Phase 7 of 12 complete. Phase 2: baseline Nav2 + AMCL + SLAM, 5/5 goals both modes,
 verified against ground-truth pose (`docs/phase2-findings.md`). Phase 3: dynamic keep-out
 zones, verified with a real mid-navigation block-and-detour test (`docs/phase3-findings.md`).
 Phase 4: deterministic pedestrian simulation (HuNav dropped - see `IMPLEMENTATION_PLAN.md`
@@ -36,8 +36,12 @@ Phase 6: `PolicyAdapter` interface, candidate action-space generation/one-step p
 (re-verified against the pinned checkpoint's actual config/source, not memory), ONNX shape
 validation proven to reject 5 different real mismatches (not just accept the correct case), and
 `DummyAdapter` - a permanent zero-checkpoint smoke test for the whole inference path, not a
-Phase 6 throwaway (`docs/phase6-findings.md`). See `IMPLEMENTATION_PLAN.md` §3 for the full
-phase list.
+Phase 6 throwaway (`docs/phase6-findings.md`). Phase 7: `CrowdNavController`, a real
+`nav2_core::Controller` embedding `nav2_mppi_controller::MPPIController` as a genuine pluginlib
+fallback - end-to-end driving in Gazebo confirmed, and the failover transition verified
+quantitatively (a real single-tick command discontinuity at the switch, bounded to the exact
+configured accel/decel limits by the existing velocity smoother), not just the trigger
+(`docs/phase7-findings.md`). See `IMPLEMENTATION_PLAN.md` §3 for the full phase list.
 
 ## Known limitations (stated deliberately, not discovered as accidents)
 

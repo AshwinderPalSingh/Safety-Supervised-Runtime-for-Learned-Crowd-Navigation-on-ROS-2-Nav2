@@ -1,0 +1,11 @@
+<class_libraries>
+    <library path="crowd_nav_controller">
+        <class type="crowd_nav_controller::CrowdNavController" base_class_type="nav2_core::Controller">
+            <description>
+                Learned-policy nav2_core::Controller: hold-last-action rate handling and an
+                inference-latency watchdog with failover to an embedded nav2_core::Controller
+                (e.g. nav2_mppi_controller::MPPIController). IMPLEMENTATION_PLAN.md S3 Phase 7 / S4.6.
+            </description>
+        </class>
+    </library>
+</class_libraries>

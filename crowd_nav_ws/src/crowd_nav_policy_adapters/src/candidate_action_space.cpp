@@ -18,6 +18,8 @@ CandidateActionSpaceConfig loadCandidateActionSpaceConfig(const std::string & ya
   config.time_step_s = node["time_step_s"].as<double>();
   config.max_humans = node["max_humans"].as<size_t>();
   config.human_radius_m = node["human_radius_m"].as<double>();
+  config.policy_radius_m = node["policy_radius_m"].as<double>();
+  config.policy_v_pref_mps = node["policy_v_pref_mps"].as<double>();
 
   if (config.speed_samples <= 0 || config.rotation_samples <= 0) {
     throw std::runtime_error(

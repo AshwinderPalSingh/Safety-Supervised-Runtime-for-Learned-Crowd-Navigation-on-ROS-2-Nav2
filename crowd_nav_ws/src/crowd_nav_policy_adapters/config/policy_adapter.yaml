@@ -15,3 +15,10 @@ time_step_s: 0.25
 # built through. feature_dim = 9 + 5 * max_humans.
 max_humans: 5
 human_radius_m: 0.3
+
+# Robot self-state constants fed to the network (RobotSelfState::radius/v_pref) - matched to
+# CrowdNav's training distribution (S4.3's policy_radius/robot_radius split), not the real
+# robot's physical size/speed. Added v1.13 (Phase 7) so the controller plugin (now) and
+# SarlAdapter (Phase 8) share one source instead of each hand-typing these separately.
+policy_radius_m: 0.3
+policy_v_pref_mps: 1.0

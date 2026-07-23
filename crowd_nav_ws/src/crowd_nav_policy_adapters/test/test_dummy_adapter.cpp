@@ -96,6 +96,29 @@ TEST(DummyAdapterEndToEnd, LoadsShapeValidatesInfersAndDecodesDeterministically)
   EXPECT_NEAR(cmd.vy, 0.12885124808584156, 1e-9);
 }
 
+TEST(DummyAdapterEndToEnd, DoesNotStopWhenGoalIsRoughlyAheadOfTheRobot)
+{
+  // Regression test for a real bug found live in Phase 7 (docs/phase7-findings.md): the stop
+  // action's degenerate atan2(0,0)==0 heading used to tie with the goal-ahead case (the COMMON
+  // case, not an edge case) and win, leaving the robot permanently stopped. Goal directly ahead
+  // (+x, matching the robot's initial theta=0) is exactly that case.
+  const CandidateActionSpaceConfig config =
+    loadCandidateActionSpaceConfig(packageDir() + "/config/policy_adapter.yaml");
+  DummyAdapter adapter(config);
+
+  WorldState state;
+  state.robot = {0.0, 0.0, 0.0, 0.0, 0.14, 5.0, 0.0, 1.0, 0.0};  // goal (5,0): straight ahead
+
+  const auto inputs = adapter.buildInputs(state);
+  Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "test_dummy_adapter_goal_ahead");
+  Ort::SessionOptions options;
+  Ort::Session session(env, (packageDir() + "/models/dummy_policy.onnx").c_str(), options);
+  const auto outputs = runInference(session, inputs, {"value"});
+
+  const auto cmd = adapter.selectAction(outputs, state);
+  EXPECT_GT(std::hypot(cmd.vx, cmd.vy), 0.01) << "must drive toward the goal, not stay stopped";
+}
+
 TEST(DummyAdapterEndToEnd, RepeatedCallsAreDeterministic)
 {
   const CandidateActionSpaceConfig config =
