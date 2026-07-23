@@ -79,6 +79,18 @@ argument for why this phase's done-bar requires the live check rather than stopp
    action from the search entirely (deciding when to stop is the goal checker's job, not this
    placeholder heuristic's); added `DummyAdapterEndToEnd.DoesNotStopWhenGoalIsRoughlyAheadOfTheRobot`
    as a permanent regression test.
+
+   **This is the most instructive finding of the phase, and the strongest argument yet for
+   keeping `DummyAdapter` in the tree permanently (§3 Phase 6/8), not just a Phase 6
+   throwaway**: a dummy whose heuristic silently fails in the common case is exactly the
+   defect that would have made Phase 8 unreadable. Swap in `SarlAdapter`, watch the robot
+   behave oddly, and there would have been no way to tell whether the search reimplementation
+   was wrong or the harness underneath it was - precisely the risk Phase 6 was built to
+   eliminate (§4.6/S3 Phase 6: "guarantees a Phase 8 failure means the SARL search
+   reimplementation is wrong and nothing else"). The eliminator itself had the bug. It's fixed
+   now, and `DummyAdapterEndToEnd.DoesNotStopWhenGoalIsRoughlyAheadOfTheRobot` pins a real
+   failure this project actually hit, not a hypothetical one - exactly the kind of regression
+   coverage that makes the permanent-fixture argument concrete rather than aspirational.
 4. **Runtime parameters were read once at `configure()` and never refreshed - `ros2 param set`
    updated the parameter server but had no effect on the running node.** This silently defeated
    the whole point of `debug_inject_decision_delay_s` being a live-settable diagnostic knob.
