@@ -1,9 +1,9 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.9 (2026-07-21, updated 2026-07-22) — Phase 4 done, Phase 5 rescoped
+## Implementation Plan v1.10 (2026-07-21, updated 2026-07-23) — Phase 5 done
 
 This document is the living plan for the project, updated as each phase lands rather than
-frozen at the start. Phases 0–4 are done as of this revision (§3 has current status per
-phase); everything from Phase 5 onward is still plan, not implementation.
+frozen at the start. Phases 0–5 are done as of this revision (§3 has current status per
+phase); everything from Phase 6 onward is still plan, not implementation.
 
 **v1.1 changes** (post-review, same day): inserted a synthetic-adapter phase before SARL to
 decouple runtime-plumbing risk from SARL-search-correctness risk (§3, new Phase 6); confirmed
@@ -145,6 +145,25 @@ test - the same class of check Phase 8's `SarlAdapter` verification already comm
 one phase earlier since it's the highest-leverage place in this project for a silent bug (a
 wrong human ordering or off-by-one padding produces a policy that behaves plausibly but
 wrongly, with nothing downstream able to flag it).
+
+**v1.10 changes (2026-07-23)**: Phase 5 implemented and closed per the v1.9 rescope - full trail
+in `docs/phase5-findings.md`. All four done-bar items verified, not assumed: unit tests green;
+**round-trip against the actual reference implementation passes** (re-cloned
+`tkkim-robot/Gazebo-CrowdNav` at the pinned commit since the prior session's clone didn't
+survive, re-read `cadrl.py`'s `rotate()` directly rather than trusting a memorized
+transcription, generated a checked-in fixture from the real `CADRL.rotate()`, verified all 5
+cases to `1e-6`); RNG-substream independence confirmed by test (same-tag streams identical,
+different-tag streams diverge immediately); latency ring buffer verified with a test
+specifically constructed to fail under a tick-counting implementation (uneven-interval
+ingestion, correct freshest-sample-at-or-before-target-time selection). Found and fixed before
+first build, not after: `ObservationBuilder` originally referenced a `radius` field on
+`HumanObservation` that doesn't exist - perception never measures human radius, and
+`pedestrian_sim_node` (Phase 4) already treats it as one uniform config constant, not a
+per-individual sensed value, so the fix was a `human_radius` config parameter on
+`ObservationBuilder` (same category as `RobotSelfState::v_pref`), not a schema change to
+`HumanObservation`. Also switched the round-trip fixture from JSON to plain whitespace-delimited
+text after `rosdep resolve` was unavailable to confirm `nlohmann-json-dev` actually resolves to
+the installed `nlohmann-json3-dev` package - avoids shipping an unverified dependency.
 
 ---
 
@@ -527,8 +546,8 @@ Everything below lives in one colcon workspace, `crowd_nav_ws/src/`.
 | `crowd_nav_gazebo` | World files (open-arena, tugbot_depot integration, compact depot if needed), spawn launch | No |
 | ~~`crowd_nav_msgs`~~ | **Superseded (v1.9), not built as planned** — `AddZone`/`RemoveZone` ended up defined inside `crowd_nav_zones` (Phase 3) and the ground-truth human-state message (`Pedestrian`/`PedestrianArray`) inside `crowd_nav_pedestrians` (Phase 4), colocated with their producing package rather than centralized. Standard ROS2 practice for a project this size, and it happened without the plan saying so first - correcting here rather than leaving the table wrong. `InterventionEvent` (Phase 9, not yet built) will need a home decided when that phase starts - likely `crowd_nav_safety_supervisor` itself, for the same colocation reason, unless a second consumer emerges first. | — |
 | `crowd_nav_onnxruntime_vendor` | Minimal vendored ONNX Runtime CMake package | No |
-| `crowd_nav_perception` | `HumanStateSource` interface, `GroundTruthHumanSource` (+ degradation model, consuming `crowd_nav_pedestrians`' `PedestrianArray` via the message-adapter seam in §4.1), `TrackedHumanSource` stub | No |
-| `crowd_nav_observation` | Observation builder library/node, canonical `WorldState` struct | No |
+| `crowd_nav_perception` | **Built and closed in Phase 5.** `HumanStateSource` interface, `GroundTruthHumanSource` (+ degradation model, consuming `crowd_nav_pedestrians`' `PedestrianArray` via the message-adapter seam in §4.1), `TrackedHumanSource` stub | No |
+| `crowd_nav_observation` | **Built and closed in Phase 5.** Observation builder library, canonical `WorldState` struct | No |
 | `crowd_nav_policy_adapters` | `PolicyAdapter` interface, `SarlAdapter`, ONNX shape-validation helper | Onnxruntime only |
 | `crowd_nav_controller` | `nav2_core::Controller` plugin: rate handling, accel clamping, latency watchdog + failover | Yes (nav2_core) |
 | `crowd_nav_safety_supervisor` | Forward-sim, costmap/keepout check, OOD detector, fallback trigger, intervention logging | Yes (costmap_2d) |
@@ -691,31 +710,37 @@ never authoritative, never read by anything downstream. Full trail: `docs/phase4
   real measurement, not an assumption, worth re-checking if pedestrian count scales up a lot
   later.
 
-**Phase 5 — HumanStateSource, perception degradation, observation builder (rescoped v1.9)**
+**Phase 5 — HumanStateSource, perception degradation, observation builder (rescoped v1.9) — DONE, done-bar met**
 `GroundTruthHumanSource` wrapping the Phase 4 topic, degradation model (Gaussian
-position/velocity noise, dropout, latency, max-range, costmap-based occlusion check —
-occlusion is the one sub-feature I'd cut first under time pressure, see §6),
+position/velocity noise, dropout, latency, max-range; costmap-based occlusion check declared
+but not implemented this phase — the one sub-feature cut first under time pressure, see §6),
 `TrackedHumanSource` stub, observation builder producing SARL's flat padded vector with a
-schema now pinned to the actual reference implementation, not just documented in the abstract
+schema pinned to the actual reference implementation, not just documented in the abstract
 (§4.1.1 - human ordering, padding as this project's own addition not upstream's, frame, units,
-exact field layout verified against `tkkim-robot/Gazebo-CrowdNav`).
+exact field layout verified against `tkkim-robot/Gazebo-CrowdNav`). Full trail:
+`docs/phase5-findings.md`.
 
-**Done:**
-- Unit tests (fixed input → known output vector) green.
+**Done, verified with direct measurement (docs/phase5-findings.md has the full trail):**
+- Unit tests (fixed input → known output vector) green, both packages: `crowd_nav_perception`
+  (6/6) and `crowd_nav_observation` (3/3).
 - **Round-trip verified against the reference implementation, not just hand-computed
-  expectations** (§4.1.2): a synthetic robot+human state fed through this project's observation
-  builder and independently through the reference repo's own `CADRL.rotate()` produces matching
-  rotated output - catches "misunderstood the schema" bugs a hand-written expected-value test
-  can't, since a wrong human ordering or off-by-one in padding would otherwise produce a policy
-  that behaves plausibly but wrongly with nothing downstream flagging it.
-- A manual degradation sweep (e.g. dropout=0.3 over 1000 synthetic ticks) produces the expected
-  missing-detection rate within sampling noise, **with the pedestrian trajectories themselves
-  identical across every point in the sweep** (§4.2's RNG-substream separation) - confirms the
-  sweep is actually isolating perception noise, not accidentally also varying where the humans
-  walked.
-- Degradation latency's ring buffer is verified against sim time, not assumed correct from a
-  hardcoded tick count (§4.2) - if the observation builder's tick rate ever changes, the
-  effective latency in seconds must not silently change with it.
+  expectations** (§4.1.2): re-cloned `tkkim-robot/Gazebo-CrowdNav` at the pinned commit, called
+  its actual `CADRL.rotate()` on 5 synthetic robot+human states to generate a checked-in
+  fixture, then fed the same states through this project's observation builder plus a
+  test-only transcribed `rotate()` and diffed against the fixture to `1e-6` - all 5 cases
+  match. Caught a real gap before the first build attempt: `ObservationBuilder` referenced a
+  nonexistent `radius` field on `HumanObservation`; fixed by making human radius a config
+  constant (matching how `pedestrian_sim_node` already treats it - one uniform value, not
+  per-individual), not a schema addition to the perception message.
+- A manual degradation sweep (dropout=0.3 over 1000 synthetic ticks) produces the expected
+  missing-detection rate within 5-sigma binomial sampling tolerance, **with RNG-substream
+  independence confirmed by test** (§4.2) - same-tag streams reproduce byte-identical, a
+  different-tag stream diverges immediately - confirming the split actually isolates
+  perception noise from pedestrian motion, not just asserted to by construction.
+- Degradation latency's ring buffer verified against sim time with a test built specifically to
+  fail under a tick-counting implementation: uneven-interval ingestion (t=0.0/0.3/1.7/2.0),
+  query at t=2.0 with latency=1.0 correctly returns the t=0.3 sample, not a naive
+  "3-ticks-back" or "latest" answer.
 
 **Phase 6 — Synthetic adapter + ONNX plumbing validation**
 Added after review: starting the policy-integration work directly with SARL bundles two
