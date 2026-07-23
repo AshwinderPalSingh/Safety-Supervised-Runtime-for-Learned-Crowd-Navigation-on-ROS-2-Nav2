@@ -1,9 +1,9 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.10 (2026-07-21, updated 2026-07-23) — Phase 5 done
+## Implementation Plan v1.12 (2026-07-21, updated 2026-07-23) — Phase 6 done
 
 This document is the living plan for the project, updated as each phase lands rather than
-frozen at the start. Phases 0–5 are done as of this revision (§3 has current status per
-phase); everything from Phase 6 onward is still plan, not implementation.
+frozen at the start. Phases 0–6 are done as of this revision (§3 has current status per
+phase); everything from Phase 7 onward is still plan, not implementation.
 
 **v1.1 changes** (post-review, same day): inserted a synthetic-adapter phase before SARL to
 decouple runtime-plumbing risk from SARL-search-correctness risk (§3, new Phase 6); confirmed
@@ -164,6 +164,38 @@ per-individual sensed value, so the fix was a `human_radius` config parameter on
 `HumanObservation`. Also switched the round-trip fixture from JSON to plain whitespace-delimited
 text after `rosdep resolve` was unavailable to confirm `nlohmann-json-dev` actually resolves to
 the installed `nlohmann-json3-dev` package - avoids shipping an unverified dependency.
+
+**v1.11 changes (2026-07-23)**: Phase 6 rescoped before implementation, per review, in two
+concrete ways (§4.3.1 has the full detail):
+1. The candidate action space (speed/rotation sample counts, exponential speed spacing,
+   one-step propagation) is now a single config (`policy_adapter.yaml`) that both the Python
+   dummy-model generator and the C++ adapters (`DummyAdapter` now, `SarlAdapter` in Phase 8)
+   read - the trivial ONNX model's declared batch dimension is computed from it, never
+   hand-typed as `81` in two places that could silently drift apart. The underlying values
+   (`speed_samples=5`, `rotation_samples=16`, `time_step=0.25`, exponential sampling) were
+   re-verified by fetching the pinned checkpoint's actual `policy.config`/`env.config` and
+   `cadrl.py` directly, not recalled from the §7 assumption that first stated them.
+2. `DummyAdapter` is now explicitly scoped to stay in the tree permanently after Phase 8 lands,
+   as a zero-checkpoint smoke test for the inference plumbing - not deleted once real SARL
+   weights are available (§3 Phase 8).
+
+Also recorded: `crowd_nav_onnxruntime_vendor`'s packaging risk (§5 risk #5) is already
+retired as of Phase 0 - Phase 6 consumes an already-built, already-tested vendor package, not
+fresh packaging risk. The documented fallback (`ros-industrial/epd_onnxruntime_vendor`) still
+applies if a *future* ONNX Runtime version bump ever breaks the CMake wrapper.
+
+**v1.12 changes (2026-07-23)**: Phase 6 implemented and closed per the v1.11 rescope - full
+trail in `docs/phase6-findings.md`. New package `crowd_nav_policy_adapters`: `PolicyAdapter`
+interface, `CandidateActionSpaceConfig`/`buildCandidateActionSpace()`/`propagateCandidate()`
+(all verified against the pinned checkpoint's actual `policy.config`/`env.config`/`cadrl.py`,
+re-fetched directly rather than trusting the plan's own §7 assumption), `validateSessionShapes()`
+(proven to reject 5 different deliberately-wrong shapes, not just accept the correct one),
+`runInference()`, and `DummyAdapter` wired to a config-shape-derived trivial ONNX model
+(`generate_dummy_model.py`). 16/16 new tests pass; full-workspace rebuild plus every prior
+phase's test suite re-run clean (25 tests total, no regression). One environment gap found and
+recorded, not silently worked around: this machine's PyTorch (2.13) dynamo-based ONNX exporter
+needs `onnxscript`, not installed by default here - documented in the findings so a fresh
+machine doesn't hit the same failure unexplained.
 
 ---
 
@@ -548,7 +580,7 @@ Everything below lives in one colcon workspace, `crowd_nav_ws/src/`.
 | `crowd_nav_onnxruntime_vendor` | Minimal vendored ONNX Runtime CMake package | No |
 | `crowd_nav_perception` | **Built and closed in Phase 5.** `HumanStateSource` interface, `GroundTruthHumanSource` (+ degradation model, consuming `crowd_nav_pedestrians`' `PedestrianArray` via the message-adapter seam in §4.1), `TrackedHumanSource` stub | No |
 | `crowd_nav_observation` | **Built and closed in Phase 5.** Observation builder library, canonical `WorldState` struct | No |
-| `crowd_nav_policy_adapters` | `PolicyAdapter` interface, `SarlAdapter`, ONNX shape-validation helper | Onnxruntime only |
+| `crowd_nav_policy_adapters` | **`PolicyAdapter` interface, candidate action-space/propagation, shape validation, `DummyAdapter` built and closed in Phase 6.** `SarlAdapter` still to come in Phase 8. | Onnxruntime only |
 | `crowd_nav_controller` | `nav2_core::Controller` plugin: rate handling, accel clamping, latency watchdog + failover | Yes (nav2_core) |
 | `crowd_nav_safety_supervisor` | Forward-sim, costmap/keepout check, OOD detector, fallback trigger, intervention logging | Yes (costmap_2d) |
 | ~~`crowd_nav_costmap_filters`~~ | **Built as `crowd_nav_zones` instead (Phase 3)** - same responsibility (zone-manager node: mask gen + reload via a real `map_server` instance + `AddZone`/`RemoveZone`, stock `KeepoutFilter`), different name chosen during implementation; correcting the table rather than leaving two names for one package. | Yes (map_server/costmap_2d) |
@@ -742,22 +774,43 @@ exact field layout verified against `tkkim-robot/Gazebo-CrowdNav`). Full trail:
   query at t=2.0 with latency=1.0 correctly returns the t=0.3 sample, not a naive
   "3-ticks-back" or "latest" answer.
 
-**Phase 6 — Synthetic adapter + ONNX plumbing validation**
+**Phase 6 — Synthetic adapter + ONNX plumbing validation (rescoped v1.11) — DONE, done-bar met**
 Added after review: starting the policy-integration work directly with SARL bundles two
 independent risks together — "does the ONNX/controller-plugin plumbing work" and "did I
-correctly reimplement SARL's candidate-action search" — and a failure could be either. So
-this phase builds `PolicyAdapter`, the ONNX shape-validation helper, and
-`crowd_nav_onnxruntime_vendor`, wired to a **hand-written trivial ONNX model** that declares
-the exact tensor shapes `SarlAdapter` will need (a batch of candidate joint-states in, a
-scalar per row out) but has trivial internals (e.g. a single linear layer, or a constant
-output). `DummyAdapter` implements the full interface against it — `buildInputs` produces a
-real batch of one-step-propagated candidates (reusing the kinematics/propagation code SARL
-will also need), `selectAction` does something simple and deterministic (e.g. ignore the
-network's meaningless output and pick the candidate whose heading is closest to the
-goal direction) just to prove data moves correctly end-to-end. **Done:** a standalone C++
-harness loads the dummy ONNX model, runs shape validation, performs inference, and decodes an
-action, deterministically and reproducibly, with no crashes — this is the first real exercise
-of the ONNX vendor package and the adapter interface, with zero SARL-specific risk mixed in.
+correctly reimplement SARL's candidate-action search" — and a failure could be either. What
+this phase is actually for, stated plainly: it's what guarantees a Phase 8 failure means "the
+SARL search reimplementation is wrong" and nothing else. Everything it builds is real and
+permanent, reused unchanged by Phase 8 — the vendored ONNX package (already built and proven
+in Phase 0), the shape-validation helper, the `PolicyAdapter` interface, and the candidate-
+action generation/one-step propagation code (§4.3.1, verified against the actual reference
+implementation, not reconstructed from memory). `DummyAdapter` is the one throwaway *policy*,
+wired to a **hand-written trivial ONNX model** (`generate_dummy_model.py`) whose declared input
+shape is computed from the same `policy_adapter.yaml` config the C++ side reads — not a
+hand-typed `81` on either side (§4.3.1) — with trivial-but-checkable internals (a single linear
+layer with known weights, so inference output has a known-correct answer, not just "didn't
+crash"). `buildInputs` produces a real batch of one-step-propagated candidates through this
+project's own observation builder (Phase 5, unchanged); `selectAction` does something simple
+and deterministic (ignore the network's meaningless output, pick the candidate whose heading is
+closest to the goal direction) just to prove data moves correctly end-to-end. Full trail:
+`docs/phase6-findings.md`.
+
+**Done, verified with direct measurement (docs/phase6-findings.md has the full trail):**
+- A standalone C++ harness (gtest, `crowd_nav_policy_adapters`) loads the checked-in dummy ONNX
+  model, runs shape validation, performs inference, and decodes an action, deterministically
+  and reproducibly, with no crashes.
+- **Shape validation proven to actually reject a mismatch, not just accept the correct case**:
+  5 deliberately-wrong `ShapeSpec`s (wrong feature dim, wrong candidate count, wrong name,
+  wrong rank, an extra input) against the real model each throw `ShapeValidationError`; a
+  dynamic-batch (`-1`) marker is separately confirmed to still be accepted.
+- Inference output matches an independently-computed known-correct answer (sum of each input
+  row, from the trivial model's known weight=1/bias=0), not just "didn't crash."
+- Candidate-action generation and one-step propagation both verified against values computed
+  independently in Python, not by re-invoking this project's own C++ formula against itself —
+  and the underlying discretization (`speed_samples=5`, `rotation_samples=16`, exponential
+  speed spacing, `time_step=0.25`) was re-confirmed by fetching the pinned checkpoint's actual
+  `policy.config`/`env.config`/`cadrl.py` directly, not recalled from §7's own assumption.
+- Two independent `DummyAdapter` instances given the same synthetic input produce
+  byte-identical output.
 
 **Phase 7 — Controller plugin**
 `nav2_core::Controller` plugin: hold-last-action + velocity smoothing across the 4 Hz/20 Hz
@@ -781,7 +834,12 @@ before HEIGHT or ORACLE-Nav ever show up. **Done:** a standalone C++ harness (no
 Gazebo) feeds hand-crafted scenarios through `SarlAdapter` and its chosen action matches the
 original Python SARL's action on the same inputs; flipping the Phase 7 controller's config
 from `dummy` to `sarl` requires zero code changes and produces visibly SARL-like behavior
-(yielding, path curvature) instead of the dummy heuristic.
+(yielding, path curvature) instead of the dummy heuristic. `DummyAdapter` **stays in the tree
+after this phase**, not deleted once real weights land — it's the fastest possible smoke test
+for the whole inference path (no checkpoint, no PyTorch, no real policy) and the tool of choice
+for isolating "is the plumbing still working" from "is the policy behaving correctly" if a
+later integration (Phase 12's HEIGHT) breaks something. Kept as a permanent fixture in the test
+suite, not a Phase 6 throwaway.
 
 **Phase 9 — Safety supervisor**
 **Principle carried forward from Phase 2** (`docs/phase2-findings.md`, "don't reimplement what
@@ -1046,6 +1104,56 @@ Phase 9**: the safety supervisor's forward-sim collision check must use this sam
 property, not re-derive or hardcode its own — this is exactly the kind of value that's cheap to
 get right once and expensive to have silently drift between two places that both matter for
 physical safety.
+
+### 4.3.1 Candidate action space — single config, no hand-copied constants (added v1.11, before Phase 6 implementation)
+
+Review flagged a real risk: if the trivial dummy ONNX model's declared shape and the C++
+candidate generator's batch size are both hand-typed (`81`) in two separate places, shape
+validation only proves the dummy model agrees with itself — a genuine mismatch wouldn't surface
+until Phase 8. Fixed by making both derive from one config, with the discretization values
+themselves verified against the pinned checkpoint's actual config files (not memory):
+
+- `crowd_nav/configs/policy.config`'s `[action_space]` section, fetched directly at the pinned
+  commit: `kinematics = holonomic`, `speed_samples = 5`, `rotation_samples = 16`,
+  `sampling = exponential`. This is where the plan's already-pinned §7 assumption ("5 speeds ×
+  16 headings + 1 stop") actually comes from — confirmed at the source here, not just asserted.
+- `crowd_nav/configs/env.config`'s `[env]` section: `time_step = 0.25` — the propagation
+  interval both self and human one-step lookahead use.
+- `cadrl.py`'s `build_action_space()`, read directly: speeds are **exponentially**, not
+  uniformly, spaced — `speeds[i] = (exp((i+1)/speed_samples) - 1) / (e - 1) * v_pref` for
+  `i` in `[0, speed_samples)`; `rotations = linspace(0, 2π, rotation_samples, endpoint=False)`
+  for holonomic. Candidate 0 is always the stop action `(0, 0)`; the remaining
+  `speed_samples * rotation_samples` candidates are every `(rotation, speed)` pair — 81 total
+  with the values above, computed, never hand-typed.
+- `cadrl.py`'s `propagate()`, read directly: self (`FullState`) advances under the candidate
+  action itself (`px += vx·dt`, `py += vy·dt`; radius/gx/gy/v_pref/theta unchanged for
+  holonomic); humans (`ObservableState`) advance under their **own current velocity**
+  (`px += vx·dt`, `py += vy·dt`, constant-velocity assumption) — matching §1.4's step 2
+  exactly, now confirmed against the source rather than just described in the abstract.
+  Worth recording: `predict()` has a `query_env=True` branch (and the pinned `policy.config`
+  does set `query_env = true`) that asks the *training-time simulator* for the true next human
+  states instead of assuming constant velocity — not usable at deployment (there is no
+  simulator to query once this is running against Gazebo/real sensors), so the deployed adapter
+  necessarily takes the `else` branch's constant-velocity propagation. Not a new decision, just
+  confirming the plan's existing choice is the only one actually available outside training.
+
+**Single config file**, `crowd_nav_policy_adapters/config/policy_adapter.yaml`
+(`speed_samples`, `rotation_samples`, `time_step_s`, `max_humans`, `human_radius_m`) is the one
+place these numbers live. `generate_dummy_model.py` (Phase 6) reads it to compute the trivial
+ONNX model's declared input shape (`candidateCount() × featureDim()`, both computed, not
+typed); `DummyAdapter` (Phase 6) and `SarlAdapter` (Phase 8) read the same file at construction
+to compute their own `expectedShape()` and to size `buildInputs()`'s batch — so shape
+validation is checking the model file against the runtime config, and a drift between them
+(someone edits the YAML, forgets to regenerate the `.onnx`, or vice versa) is exactly the kind
+of mismatch it's designed to catch.
+
+**Feature vector per candidate**: this project's own raw (pre-rotation) observation vector
+(`crowd_nav_observation::ObservationBuilder::build()`, Phase 5, run on each candidate's
+propagated `WorldState`) — reused unchanged, not a new format invented for the dummy.
+Deliberately **not** the rotated 13-column SARL feature: Phase 5's own findings
+(`docs/phase5-findings.md`) explicitly reserved rotation for Phase 8's `SarlAdapter`, and Phase
+6 shouldn't quietly implement it a phase early under a different name just because a batch of
+candidates happens to flow through here too.
 
 ### 4.4 OOD detector — sharpened
 

@@ -1,0 +1,17 @@
+# Single source of truth for every adapter's candidate-batch tensor shape - read by both
+# scripts/generate_dummy_model.py (Phase 6, to compute the trivial ONNX model's declared input
+# shape) and the C++ adapters (DummyAdapter now, SarlAdapter in Phase 8) at construction time.
+# IMPLEMENTATION_PLAN.md S4.3.1 has the full provenance - speed_samples/rotation_samples/
+# time_step_s are verified directly against the pinned checkpoint's own
+# crowd_nav/configs/policy.config [action_space] and env.config [env] sections, not memorized.
+
+# Candidate action space (cadrl.py's build_action_space/propagate, kinematics=holonomic).
+# candidate count = speed_samples * rotation_samples + 1 (the +1 is the stop action).
+speed_samples: 5
+rotation_samples: 16
+time_step_s: 0.25
+
+# Observation shape (crowd_nav_observation::ObservationBuilder, Phase 5) each candidate is
+# built through. feature_dim = 9 + 5 * max_humans.
+max_humans: 5
+human_radius_m: 0.3
