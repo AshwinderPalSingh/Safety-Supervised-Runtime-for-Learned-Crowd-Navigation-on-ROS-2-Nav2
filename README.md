@@ -230,11 +230,9 @@ gate, and it doesn't block PRs.
 
 ## Build history
 
-12 phases planned, 11 complete (Phase 12 - HEIGHT integration - is scoped follow-on work, see
-Future Work above). Each phase's detailed findings, including every bug found and how it was
-actually verified rather than assumed fixed, are logged as it landed:
-`docs/phase0-findings.md` through `docs/phase10-findings.md`. `IMPLEMENTATION_PLAN.md` §3 has
-the full phase-by-phase plan and current status; this file summarizes the result, not the
-other way around.
-
-More will be added here as later phases land.
+12 phases planned, 11 complete - the project closes here (Phase 12, HEIGHT integration, is
+scoped follow-on work, see Future Work above, decided deliberately rather than left ambiguous).
+Each phase's detailed findings, including every bug found and how it was actually verified
+rather than assumed fixed, are logged as it landed: `docs/phase0-findings.md` through
+`docs/phase11-findings.md`. `IMPLEMENTATION_PLAN.md` §3 has the full phase-by-phase plan and
+final status; this file summarizes the result, not the other way around.

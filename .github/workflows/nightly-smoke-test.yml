@@ -22,7 +22,7 @@ name: Nightly Gazebo smoke test
 # NOTE: written before this repo had a remote configured, so this workflow has not yet been
 # exercised against live GitHub Actions infrastructure. The episode invocation and the topic-
 # count assertions were both verified locally first (a real single-episode run, not a
-# hypothetical one - see docs/phase11-findings.md if present, or the Phase 11 commit) before
+# hypothetical one - see docs/phase11-findings.md) before
 # being wired into this file, per this project's own "verify against real behavior" discipline -
 # but the runner-provisioning steps (Gazebo install, headless rendering) are the one part of
 # this file that's a best-effort, standard configuration rather than something run end to end on

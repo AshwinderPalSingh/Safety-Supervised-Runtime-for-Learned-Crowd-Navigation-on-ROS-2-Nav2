@@ -1282,7 +1282,7 @@ pending, and wasn't already documented as such).
 effort, not this project's remaining backlog)**
 This is the reusability proof `PolicyAdapter` was built for, not a replacement for the SARL
 work above. With Phases 0–11 done and the runtime proven end to end against `SarlAdapter`
-(`docs/phase10-findings.md`, `docs/phase11-findings.md` if present), this phase was
+(`docs/phase10-findings.md`, `docs/phase11-findings.md`), this phase was
 deliberately not pulled into this project's scope: it starts with an open-ended risk (validating
 an officially-unverified checkpoint, §1.8, with no guarantee it's better than the RL-trained
 SARL checkpoint that turned out badly - `docs/phase0-findings.md`) rather than a bounded task,
