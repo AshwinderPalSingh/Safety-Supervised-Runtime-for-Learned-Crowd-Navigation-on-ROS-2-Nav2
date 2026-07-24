@@ -113,6 +113,10 @@ void CrowdNavController::configure(
     node, plugin_name_ + ".supervisor_max_train_speed_mps", rclcpp::ParameterValue(1.5));
   nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".supervisor_forward_sim_steps", rclcpp::ParameterValue(4));
+  // Phase 10 (S4.9): launch-time only, see the member's own comment - lets the evaluation
+  // harness's `policy_raw` config run with zero supervisor involvement.
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".supervisor_enabled", rclcpp::ParameterValue(true));
 
   const std::string fallback_plugin =
     node->get_parameter(plugin_name_ + ".fallback_controller_plugin").as_string();
@@ -152,6 +156,7 @@ void CrowdNavController::configure(
     node->get_parameter(plugin_name_ + ".supervisor_max_train_speed_mps").as_double();
   const int supervisor_forward_sim_steps =
     node->get_parameter(plugin_name_ + ".supervisor_forward_sim_steps").as_int();
+  supervisor_enabled_ = node->get_parameter(plugin_name_ + ".supervisor_enabled").as_bool();
 
   action_space_config_ = loadCandidateActionSpaceConfig(config_path);
   if (adapter_type == "sarl") {
@@ -415,6 +420,15 @@ geometry_msgs::msg::TwistStamped CrowdNavController::computeVelocityCommands(
       }
       const auto outputs = runInference(*ort_session_, inputs, adapter_->expectedShape().output_names);
       const Velocity2D candidate = adapter_->selectAction(outputs, state);
+
+      // Phase 10 (S4.9): `policy_raw` vs `policy_supervised` in the evaluation matrix needs a
+      // genuine "policy with no safety net at all" config, not just a differently-tuned one -
+      // disabling the supervisor entirely (no check, no intervention, no log) is what makes
+      // that comparison honest. Default true (supervised), so every existing config/test is
+      // unaffected unless explicitly turned off.
+      if (!supervisor_enabled_) {
+        return candidate;
+      }
 
       // OOD criteria first (S4.4/S4.8.5) - cheap, no costmap needed. `state` here is the
       // ORIGINAL WorldState, never one that's been through an adapter's own dummy-injection

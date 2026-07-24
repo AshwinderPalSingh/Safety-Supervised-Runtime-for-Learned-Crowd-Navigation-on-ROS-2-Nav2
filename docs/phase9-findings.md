@@ -245,3 +245,56 @@ Full-workspace rebuild plus every prior phase's test suite re-run clean (60 test
   (dropout enabled) is the natural place `LOW_PERCEPTION_CONFIDENCE` gets its first live
   exercise; `RELATIVE_SPEED`/`COMMAND_LIMIT` would need a deliberately fast-moving pedestrian or
   an out-of-range candidate to observe live, neither of which arose naturally in this session.
+
+## Addendum: reachability audit for the remaining causes, done before Phase 10
+
+Per review: `LOW_PERCEPTION_CONFIDENCE` was a trigger cause that was defined in §4.4, enumerated
+in the taxonomy, wired to a plausible-looking code path - and structurally could not fire, until
+this phase's own fix. That's a class of bug where the design document and the implementation
+both look correct in isolation; the only way it surfaces is asking "can this actually fire?" for
+each enumerated cause rather than assuming enumeration implies reachability. Checked the same
+question for the three remaining causes not yet exercised live, **before** Phase 10 starts
+producing a results table that could hide the same defect as a silent zero:
+
+- **`COMMAND_LIMIT` - inert under current defaults, confirmed by reading the actual formula, not
+  assumed.** `buildCandidateActionSpace()`'s speed sampling (`candidate_action_space.cpp`) is
+  `speeds[i] = (exp((i+1)/speed_samples) - 1) / (e - 1) * v_pref` - at `i = speed_samples - 1`
+  (the fastest sampled candidate), this reduces to exactly `v_pref` (`policy_v_pref_mps`, 1.0
+  m/s). `SafetySupervisorConfig::max_commanded_speed_mps` defaults to `max_linear_vel_mps_`,
+  which is *also* 1.0 m/s - and independently grounded, not a copy-paste coincidence:
+  `crowd_nav_control/config/diff_drive_controller.yaml`'s `linear.x.max_velocity` is genuinely
+  1.0 m/s, this robot's real configured hardware limit. So the candidate generator's own speed
+  ceiling and the physical-limit threshold are both real, correctly-sourced numbers that happen
+  to be numerically equal - and since the check is a strict `>`, the maximum possible candidate
+  speed can never exceed a threshold it's exactly equal to. Not a code bug (unlike
+  `LOW_PERCEPTION_CONFIDENCE` - the check itself is correct and `SafetySupervisorOod.
+  CommandLimitTriggersWhenCandidateTooFast` proves the logic works when handed an out-of-range
+  candidate directly), but a real "silent zero" risk for Phase 10's results table: if
+  `policy_v_pref_mps` and this robot's physical speed limit stay equal, `COMMAND_LIMIT` will
+  report zero interventions for a structural reason that has nothing to do with how well the
+  policy behaves. Not fixed by lowering the threshold artificially to force a trigger - that
+  would be gaming a test rather than fixing a real gap - but flagged explicitly here and in
+  Phase 10's plan (§4.9) so a zero in that column isn't misread as "the policy never asked for
+  something unsafe."
+- **`RELATIVE_SPEED` - reachable in principle, dormant under the default pedestrian scenario,
+  now fixable.** `pedestrian_sim_node.py` explicitly clamps every pedestrian's speed to its own
+  `max_speed` parameter (`if speed > self.max_speed: scale = self.max_speed / speed`), default
+  1.0 m/s - below `SafetySupervisorConfig::max_train_speed_mps`'s 1.5 m/s default (deliberately
+  set with margin above SARL's ~1 m/s training speed, §4.4). Unlike `COMMAND_LIMIT`, this one
+  *was* a real, fixable gap: `max_speed` was already a full ROS parameter on the node but not
+  exposed as a `pedestrians.launch.py` launch argument the way `seed`/`num_pedestrians`/`mode`
+  already are - fixed by adding it to the launch file's own argument surface, so a Phase 10
+  scenario can deliberately set it above 1.5 m/s and get a real, live `RELATIVE_SPEED` trigger
+  rather than a permanently-dormant one.
+- **`INFERENCE_TIMEOUT` - mechanism proven reachable (Phase 7, via the `debug_inject_decision_
+  delay_s` diagnostic knob), not yet observed under real, non-injected latency.** Phase 0's own
+  measurement put ONNX CPU inference at sub-millisecond to low-single-digit-milliseconds: the
+  30ms watchdog window (`watchdog_window_s`) is a comfortable margin under light load, and the
+  supervisor's own forward-sim adds only four trivial cost lookups per tick on top of that. This
+  is a genuinely different case from the other two: there's no code or config reason it can't
+  fire, and Phase 10's full matrix run (real system load - Gazebo, the harness, and however many
+  scenarios run concurrently or back-to-back) is exactly the condition that could make it fire
+  naturally for the first time. If it stays at zero even under that load, that is itself a real,
+  reportable finding (the watchdog margin holds under realistic conditions), not a gap to force -
+  worth explicitly checking for and stating either way in Phase 10's results, rather than
+  silently assuming reachability from the Phase 7 debug-knob demonstration alone.

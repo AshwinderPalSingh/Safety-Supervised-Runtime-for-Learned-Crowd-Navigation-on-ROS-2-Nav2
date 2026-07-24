@@ -1,9 +1,10 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.18 (2026-07-21, updated 2026-07-24) — Phase 9 done
+## Implementation Plan v1.19 (2026-07-21, updated 2026-07-24) — Phase 10 rescoped, not yet built
 
 This document is the living plan for the project, updated as each phase lands rather than
 frozen at the start. Phases 0–9 are done as of this revision (§3 has current status per
-phase); everything from Phase 10 onward is still plan, not implementation.
+phase); Phase 10 is rescoped (§4.9) but not yet implemented; everything from Phase 10 onward is
+still plan, not implementation.
 
 **v1.1 changes** (post-review, same day): inserted a synthetic-adapter phase before SARL to
 decouple runtime-plumbing risk from SARL-search-correctness risk (§3, new Phase 6); confirmed
@@ -339,6 +340,28 @@ methodology) proposed as a Phase 10 scenario. `RELATIVE_SPEED`/`COMMAND_LIMIT`/
 `LOW_PERCEPTION_CONFIDENCE`/`INFERENCE_TIMEOUT` are unit-tested but weren't observed live this
 session either. Full-workspace rebuild plus every prior phase's test suite re-run clean (60
 tests total across 5 packages, no regression).
+
+**v1.19 changes (2026-07-24)**: Phase 10 rescoped before implementation, per review, in three
+concrete ways plus two carried process notes (§4.9 has the full detail):
+1. The matrix gets piloted first - one scenario, one seed, all three configs, end to end,
+   checked by hand - before any seed count above one is attempted.
+2. `N=8` seeds per core-matrix cell and a 5-point `dropout_prob` noise sweep (on
+   `policy_supervised`/`open_arena`/`reactive` only, to isolate the perception effect from
+   depot's own navigability difficulty) are committed to now, in this revision, not chosen after
+   looking at any results.
+3. `policy_supervised` underperforming `baseline_mppi` on depot efficiency is documented here as
+   the *expected* result before any episode has run - the headline number is the intervention-
+   rate-by-cause comparison across scenario families, not a win/loss table.
+4. A named, permanent `depot_keepout_block` scenario replaces Phase 9's inconclusive ad hoc zone
+   placements, with an explicit expected outcome per config stated in advance - including
+   `policy_raw` **expected to violate the zone**, since SARL has no concept of a static keep-out
+   region at all.
+5. Two carried-forward items get resolved in this rescope rather than deferred again: §5 risk
+   #4's never-implemented "log AMCL covariance alongside supervisor decisions" note (§4.9.6, a
+   harness-level `interventions.csv` correlating two already-published topics, not a schema
+   change), and a stated contingency (§4.9.5) for isolating §4.8.1's FOV-restriction choice from
+   the policy itself if depot results look bad enough to need it - one supplementary run using
+   already-exposed parameters, zero new code.
 
 ---
 
@@ -1139,12 +1162,35 @@ elsewhere. Full trail: `docs/phase9-findings.md`.
 - Full-workspace rebuild plus every prior phase's test suite re-run clean (60 tests total across
   5 packages, no regression).
 
-**Phase 10 — Evaluation harness**
+**Phase 10 — Evaluation harness (rescoped v1.19, see §4.9)**
 Seeded scenario suite (open-arena × structured-depot) × (`baseline_mppi`, `policy_raw`,
 `policy_supervised`) × (`reactive`, `non_reactive`), clean episode termination on
-collision/timeout, CSV + metrics + plots, perception-noise sweep. **Done:** the full matrix
-runs unattended and produces CSV + plots, including the noise-sweep results, with variance/
-distributions reported, not just means.
+collision/timeout, CSV + metrics + plots, perception-noise sweep. **Three requirements from
+review, pinned before implementation (§4.9 has the full reasoning for each)**:
+1. **Pilot the matrix before running it** (§4.9.1): one scenario, one seed, all three configs,
+   end to end, checked by hand - so a harness bug is found after twenty minutes, not after an
+   overnight run.
+2. **N and the noise-sweep points decided now, not after seeing any results** (§4.9.2): `N=8`
+   seeds per core-matrix cell (96 episodes), a `dropout_prob ∈ {0.0, 0.1, 0.2, 0.3, 0.5}` sweep
+   on `policy_supervised`/`open_arena`/`reactive` only (40 episodes) - committed here, before
+   any episode has run, not chosen after glancing at partial results.
+3. **`policy_supervised` underperforming `baseline_mppi` on depot efficiency is the expected
+   result, and the intervention-rate-by-cause comparison across scenario families is the
+   headline number** (§4.9.4) - not "my method won everything," which would be more suspicious
+   than a result that wins on safety and loses on path length/duration in an out-of-distribution
+   environment.
+
+Plus: a named, permanent `depot_keepout_block` scenario (§4.9.3) replacing Phase 9's ad hoc,
+inconclusive zone-placement attempts - one run per config (not part of the N=8 matrix), with an
+explicit expected outcome per config, including `policy_raw` **expected to violate the zone**
+(SARL has no concept of a static keep-out region at all, which is exactly the failure mode the
+whole project exists to catch). And a process note (§4.9.5): if depot results look
+catastrophic, isolate §4.8.1's FOV-restriction choice with one supplementary reference-FOV run
+(already-exposed parameters, zero new code) before concluding anything about the policy itself.
+**Done:** the full matrix runs unattended after the pilot passes, producing CSV + plots with
+variance/distributions reported (not just means); the cross-family intervention-rate comparison
+and the `depot_keepout_block` per-config outcomes are both reported explicitly, not left
+implicit in a CSV.
 
 **Phase 11 — CI and docs**
 GitHub Actions per-PR gate: build workspace + compile plugins + run unit tests + lint (no
@@ -1889,6 +1935,145 @@ message, not a placeholder for one, is what a future harness can actually subscr
 to CSV) *and* logged via `RCLCPP_WARN` at the point of rejection, edge-triggered per cause the
 same way Phase 7's source-switch logging already is, for interactive visibility without needing
 to echo a topic during manual testing.
+
+### 4.9 Evaluation harness design (added v1.19, before Phase 10 implementation)
+
+Rescoped before implementation, per review. This is the phase the whole project has been
+building toward, and the one most likely to produce results that can't be interpreted -
+review's three requirements are all aimed at that specific risk, not at the harness's mechanics.
+
+**4.9.1 Pilot before the full matrix.** Before any seeded run, one scenario × one seed × all
+three configs (`baseline_mppi`, `policy_raw`, `policy_supervised`), end to end, checked by hand:
+each episode terminates (not hangs), the CSV row has plausible values (nonzero duration, a real
+path length, `policy_supervised`'s intervention columns populated and the other two configs'
+left at zero/NA), and nothing in the harness's own orchestration (launch, goal-sending,
+zone-placement for the named scenario below, termination detection, teardown between episodes)
+silently swallows a failure. This is deliberately the *first* thing built and run, before the
+scenario suite is filled out to its full size - the point is finding a harness bug after twenty
+minutes, not after an overnight unattended run. **Done for this sub-step specifically**: three
+pilot episodes complete, their CSV rows inspected by hand and judged sane, before any seed count
+above one is attempted.
+
+**4.9.2 N and the noise-sweep points, decided now, not after looking at results.** Per review:
+choosing sample size after glancing at the numbers is how a results table stops being
+trustworthy. Committing here, before any episode has run:
+- **`N = 8` seeds per (scenario × config × pedestrian-mode) cell** for the core matrix. 2
+  scenario families × 3 configs × 2 modes × 8 seeds = 96 episodes. Reasoning: large enough to
+  report a real distribution (mean *and* spread, per the existing done-bar wording), small
+  enough to be tractable in one extended session given each episode is a full Gazebo/Nav2
+  simulation, not a cheap unit test. If session time makes the full 96 infeasible, that will be
+  stated as an explicit, reasoned scope reduction in `docs/phase10-findings.md` (e.g. "N=8
+  planned, N=5 actually completed, here's why") - never silently reduced, and never chosen
+  *because* partial results looked a particular way.
+- **Noise sweep: `dropout_prob ∈ {0.0, 0.1, 0.2, 0.3, 0.5}` (5 points), `policy_supervised` only,
+  `open_arena`/`reactive` only, N=8 seeds per point (40 episodes).** Scoped to one axis and one
+  scenario/config/mode combination deliberately, not the full matrix crossed with the sweep -
+  the sweep's stated purpose (§4.4/§4.8.5) is attributing interventions to perception quality
+  specifically, which needs `LOW_PERCEPTION_CONFIDENCE`'s own trigger varied in isolation, not a
+  combinatorial explosion of every axis at once. `open_arena`/`reactive` isolates the perception
+  effect from the navigability difficulty the depot family already introduces on its own (mixing
+  the two would make it impossible to attribute a rate change to noise vs. terrain). `sigma_pos_
+  m`/`sigma_vel_mps`/`latency_s` sweeps are real, legitimate follow-on work but out of scope for
+  this phase - noted as a Phase 12+ candidate rather than attempted here under time pressure.
+  This sweep is also the first live exercise of `LOW_PERCEPTION_CONFIDENCE` at all (§4.8's own
+  addendum found it was never observed live through Phase 9) - the RNG-substream isolation from
+  Phase 5 (§4.2) is exactly what makes this a controlled sweep rather than "humans on different
+  paths at each setting too."
+
+**4.9.3 A named, permanent keep-out-block scenario, not an ad-hoc check.** Phase 9's live
+session confirmed the rejection mechanism works (a real, non-engineered `COSTMAP_COLLISION`
+episode) but never cleanly isolated a keep-out-zone-specific trigger - ad hoc zone placements
+either blocked the global planner upstream of the supervisor or left room to route around them.
+Per review, the fix is a scenario in the suite, not a repeat of that improvisation: `depot_
+keepout_block` - a fixed start/goal pair in the depot world, in a corridor with no viable
+detour, with a zone placed (via `AddZone`, at scenario setup, matching Phase 3's own successful
+methodology - a pre-measured corridor-width zone, not a guess) directly across the only path.
+Run once per config (not part of the N=8 statistical matrix - its job is a decisive
+demonstration plus a permanent regression test, not a distribution), with an explicit expected
+outcome per config, stated here so a future run that doesn't match it is caught immediately:
+- **`baseline_mppi`**: succeeds via a detour, or times out if the corridor genuinely has none -
+  either way, `KeepoutFilter` is wired into both costmaps (Phase 3), so MPPI is aware of the
+  zone and never drives through it.
+- **`policy_raw`**: **expected to violate the zone.** SARL's observation model has no concept of
+  a static keep-out region - it reasons about humans, not costmap obstacles - so nothing in the
+  policy itself prevents driving straight through. This is the sharpest, most direct
+  demonstration of the project's own motivating premise (a learned policy doesn't know about
+  hard constraints; something else has to enforce them), and the scenario is designed
+  specifically to make that failure visible, not to flatter the baseline comparison.
+- **`policy_supervised`**: rejects the candidate that would enter the zone and logs
+  `KEEPOUT_VIOLATION` (not the generic `COSTMAP_COLLISION` - this scenario is also the first
+  live test of that specific cause-label path, §4.8.3's secondary lookup). The harness's own
+  termination checker gains a fourth outcome category for this scenario specifically:
+  `keepout_violation` - the episode ends the moment ground-truth robot pose actually enters the
+  zone polygon (only reachable by `policy_raw`, given the other two configs are expected never
+  to enter it), rather than running the episode out to an uninformative timeout.
+
+**4.9.4 Expected result shape, stated before running anything, per review.** `policy_supervised`
+underperforming `baseline_mppi` on path length/duration in the depot family is the *expected*
+result, not a bug to chase: the policy is out-of-distribution in a structured environment by
+construction (trained on CrowdNav's open, unstructured scenarios), which is exactly why the
+open-arena family exists as a contrast. A results table where the supervised config wins
+everything would be more suspicious than one that wins on safety and loses on efficiency -
+worth stating in `docs/phase10-findings.md` explicitly rather than letting a reader assume an
+unqualified win was intended. The headline number is the **intervention-rate-by-cause
+breakdown, compared across the two scenario families** - near-zero in open-arena and materially
+higher in depot is a clean, honest characterization of transfer failure (a real finding), not
+just supporting evidence for "the supervisor works." Report that comparison prominently, not as
+a footnote to the collision/success-rate table.
+
+**4.9.5 If depot results look catastrophic, isolate the FOV decision before concluding
+anything about the policy.** §4.8.1 chose this robot's real ~180°/8m sensor geometry over the
+reference checkpoint's D435I-specific 85.2°/12m for the production default - a deliberate,
+justified call, but it means Phase 10 is the *first* time the policy runs against a narrower
+FOV than it saw in training, and a bad depot result could mean either "the policy doesn't
+transfer to structured environments" or "the narrower FOV alone hides too much of the scene in
+tight corridors." These are different claims requiring different fixes, and depot's own tight
+geometry makes the second one plausible enough to check before assuming the first. If depot
+numbers look bad enough to warrant investigation: one supplementary run (not part of the N=8
+matrix, not re-litigating N) with `FollowPath.perception_fov_half_angle_rad`/`.perception_max_
+range_m` set to the reference's own 85.2°/12m (already-exposed parameters, §4.8.1 - zero new
+code required) against the same depot scenario/seeds. If that run looks meaningfully better,
+the FOV choice - not the policy itself - is implicated, and that's a distinct, honestly-reported
+finding, not something to quietly fold into "the policy struggles in depot."
+
+**4.9.6 AMCL covariance alongside interventions, per §5's original (unimplemented until now)
+risk note.** §5 risk #4 flagged logging AMCL's own covariance alongside every supervisor
+decision, to separate "the supervisor was right to intervene" from "localization was degraded
+and misled it," but nothing before this phase actually built that correlation. The harness's
+metrics collector subscribes to both `/intervention_events` and `/amcl_pose` and writes a
+secondary `interventions.csv` (one row per event: episode id, timestamp, cause, the rejected/
+sent velocities already in the message, and the AMCL pose covariance trace at that timestamp) -
+not a new field on `InterventionEvent` itself (that message is already shipped and tested;
+correlating two already-published topics by timestamp in the harness is the right layer for
+this, not a schema change to a component that isn't the harness's own).
+
+**Found while designing the harness, not anticipated going in: `policy_raw` had no way to
+actually mean "no supervisor."** `CrowdNavController` unconditionally ran the supervisor check
+whenever it was the active plugin - there was no config axis distinguishing "policy with the
+safety net" from "policy without it," which the whole `policy_raw` vs. `policy_supervised`
+comparison depends on being a real difference, not just a label. Fixed with a new
+`FollowPath.supervisor_enabled` parameter (default `true`), launch-time only (not exposed via
+`onSetParameters` - each evaluation episode gets a fresh launch, not a live reconfiguration
+mid-run): when `false`, `run_policy_decision` returns the adapter's raw candidate directly, no
+OOD/forward-sim check, no `InterventionEvent`. `policy_raw` sets it `false`; `policy_supervised`
+leaves it at the default.
+
+**Scenario suite, metrics, and package layout**: `crowd_nav_evaluation` (§2) - scenario
+definitions (world, start/goal, pedestrian mode, seed, and for `depot_keepout_block` the zone
+spec) as data, not hardcoded per-scenario branches in the runner; a harness runner that launches
+the stack per episode (reusing `amcl.launch.py`/`pedestrians.launch.py` as-is, not a parallel
+launch mechanism), sends the goal, watches for termination (success/collision/timeout, plus
+`keepout_violation` for the named scenario), and tears down cleanly between episodes (reusing
+`scripts/ros2_teardown.sh`'s SIGINT-then-SIGTERM-then-SIGKILL discipline, not a fresh ad hoc
+kill sequence); a metrics collector producing per-episode `episodes.csv` (scenario family, mode,
+config, seed, outcome, duration, path length, minimum human distance, intervention count total
+and by cause) and the `interventions.csv` above; plots (variance/distributions, not just means,
+per the existing done-bar wording) generated from the CSVs, not computed inline during the run.
+**Done:** the full matrix (96 core episodes + 40 noise-sweep episodes + the named scenario per
+config) runs unattended after the pilot passes, producing both CSVs and plots; the intervention-
+rate-by-cause comparison across scenario families and the `depot_keepout_block` per-config
+outcomes are both reported explicitly in `docs/phase10-findings.md`, not left implicit in a
+CSV nobody reads.
 
 ---
 

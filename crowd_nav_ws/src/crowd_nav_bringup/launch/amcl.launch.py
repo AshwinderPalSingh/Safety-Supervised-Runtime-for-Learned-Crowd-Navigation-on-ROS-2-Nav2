@@ -3,6 +3,7 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -13,6 +14,17 @@ def generate_launch_description():
             FindPackageShare('crowd_nav_bringup'), 'maps', 'depot_scaled.yaml',
         ]),
     )
+    # World/spawn and controller-config launch args (IMPLEMENTATION_PLAN.md S4.9) - defaults
+    # match this launch file's own pre-Phase-10 hardcoded values exactly, so every existing
+    # manual invocation is unaffected; the evaluation harness overrides them per scenario/config.
+    world_file_arg = DeclareLaunchArgument('world_file', default_value='depot_scaled.sdf')
+    spawn_x_arg = DeclareLaunchArgument('spawn_x', default_value='-3.0')
+    spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value='0.0')
+    spawn_yaw_arg = DeclareLaunchArgument('spawn_yaw', default_value='0.0')
+    controller_plugin_arg = DeclareLaunchArgument(
+        'controller_plugin', default_value='crowd_nav_controller::CrowdNavController')
+    adapter_type_arg = DeclareLaunchArgument('adapter_type', default_value='sarl')
+    supervisor_enabled_arg = DeclareLaunchArgument('supervisor_enabled', default_value='true')
 
     spawn = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -21,10 +33,10 @@ def generate_launch_description():
             ])
         ),
         launch_arguments=[
-            ('world_file', 'depot_scaled.sdf'),
-            ('spawn_x', '-3.0'),
-            ('spawn_y', '0.0'),
-            ('spawn_yaw', '0.0'),
+            ('world_file', LaunchConfiguration('world_file')),
+            ('spawn_x', LaunchConfiguration('spawn_x')),
+            ('spawn_y', LaunchConfiguration('spawn_y')),
+            ('spawn_yaw', LaunchConfiguration('spawn_yaw')),
         ],
     )
 
@@ -52,9 +64,22 @@ def generate_launch_description():
         package='nav2_amcl', executable='amcl', output='screen',
         parameters=[nav2_params],
     )
+    # FollowPath overrides (IMPLEMENTATION_PLAN.md S4.9) - a plain dict entry AFTER the base
+    # nav2_params.yaml in the parameters list overrides just these three keys; every other
+    # FollowPath/costmap/AMCL parameter still comes from the one shared YAML file, no
+    # per-config file duplication. supervisor_enabled needs an explicit ParameterValue(...,
+    # value_type=bool) - a LaunchConfiguration substitution resolves to a plain string, and
+    # without this it would be passed as a string parameter instead of the bool
+    # supervisor_enabled_ (CrowdNavController) actually declares and reads with .as_bool().
+    controller_overrides = {
+        'FollowPath.plugin': LaunchConfiguration('controller_plugin'),
+        'FollowPath.adapter_type': LaunchConfiguration('adapter_type'),
+        'FollowPath.supervisor_enabled': ParameterValue(
+            LaunchConfiguration('supervisor_enabled'), value_type=bool),
+    }
     controller_server = Node(
         package='nav2_controller', executable='controller_server', output='screen',
-        parameters=[nav2_params],
+        parameters=[nav2_params, controller_overrides],
         remappings=[('odom', '/diff_drive_base_controller/odom')],
     )
     planner_server = Node(
@@ -92,6 +117,13 @@ def generate_launch_description():
 
     return LaunchDescription([
         map_arg,
+        world_file_arg,
+        spawn_x_arg,
+        spawn_y_arg,
+        spawn_yaw_arg,
+        controller_plugin_arg,
+        adapter_type_arg,
+        supervisor_enabled_arg,
         spawn,
         zones,
         map_server,

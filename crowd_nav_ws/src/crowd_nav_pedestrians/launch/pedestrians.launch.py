@@ -16,6 +16,7 @@ def generate_launch_description():
     mode = LaunchConfiguration('mode')
     seed = LaunchConfiguration('seed')
     num_pedestrians = LaunchConfiguration('num_pedestrians')
+    max_speed = LaunchConfiguration('max_speed')
     mirror_enabled = LaunchConfiguration('mirror_enabled')
     world_name = 'crowd_nav_depot_scaled'
 
@@ -40,6 +41,7 @@ def generate_launch_description():
             'mode': mode,
             'seed': seed,
             'num_pedestrians': num_pedestrians,
+            'max_speed': max_speed,
             'robot_pose_topic': '/ground_truth/robot_pose',
         }],
     )
@@ -74,6 +76,12 @@ def generate_launch_description():
         DeclareLaunchArgument('mode', default_value='reactive'),
         DeclareLaunchArgument('seed', default_value='42'),
         DeclareLaunchArgument('num_pedestrians', default_value='6'),
+        # Exposed (Phase 9 reachability audit, docs/phase9-findings.md follow-up): previously
+        # only settable via a raw ros2 param override, not through this launch file's own
+        # argument surface like seed/num_pedestrians already are - needed to build a Phase 10
+        # scenario deliberately above SafetySupervisorConfig::max_train_speed_mps (1.5 m/s
+        # default), since the node's own 1.0 m/s default can never exceed that threshold.
+        DeclareLaunchArgument('max_speed', default_value='1.0'),
         DeclareLaunchArgument('mirror_enabled', default_value='false'),
         robot_pose_bridge,
         pedestrian_sim,

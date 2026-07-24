@@ -1,0 +1,84 @@
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <world name="crowd_nav_open_arena">
+    <!-- IMPLEMENTATION_PLAN.md S4.9: the "open-arena" scenario family needs a real Gazebo world
+         with SOME static geometry (for AMCL scan-matching to work at all - a truly empty,
+         boundless plane like worlds/empty.sdf gives AMCL nothing to localize against and was
+         never intended as an AMCL-navigable world, only a SLAM-demo one, S6). This is the exact
+         same room footprint as depot_scaled.sdf (4 boundary walls, identical positions/sizes)
+         with none of depot's internal shelving - a deliberate "same size, no clutter" contrast
+         to the structured-depot family, not an arbitrarily different scale, so path-length/
+         duration comparisons between the two families mean something. -->
+    <physics name="10ms" type="ignored">
+      <max_step_size>0.01</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="libignition-gazebo-physics-system.so" name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="libignition-gazebo-user-commands-system.so" name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="libignition-gazebo-scene-broadcaster-system.so" name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation><range>1000</range><constant>0.9</constant><linear>0.01</linear><quadratic>0.001</quadratic></attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <surface><friction><ode/></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="open_arena">
+      <static>true</static>
+      <link name="link">
+        <collision name="wall_south_collision">
+          <pose>0.00000 -2.05548 1.21500 0 0 0</pose>
+          <geometry><box><size>8.14509 0.02160 2.43000</size></box></geometry>
+        </collision>
+        <visual name="wall_south_visual">
+          <pose>0.00000 -2.05548 1.21500 0 0 0</pose>
+          <geometry><box><size>8.14509 0.02160 2.43000</size></box></geometry>
+        </visual>
+        <collision name="wall_north_collision">
+          <pose>0.00000 1.96762 1.21500 0 0 0</pose>
+          <geometry><box><size>8.14509 0.02160 2.43000</size></box></geometry>
+        </collision>
+        <visual name="wall_north_visual">
+          <pose>0.00000 1.96762 1.21500 0 0 0</pose>
+          <geometry><box><size>8.14509 0.02160 2.43000</size></box></geometry>
+        </visual>
+        <collision name="wall_west_collision">
+          <pose>-4.05000 0.00000 1.21500 0 0 0</pose>
+          <geometry><box><size>0.02160 4.14720 2.43000</size></box></geometry>
+        </collision>
+        <visual name="wall_west_visual">
+          <pose>-4.05000 0.00000 1.21500 0 0 0</pose>
+          <geometry><box><size>0.02160 4.14720 2.43000</size></box></geometry>
+        </visual>
+        <collision name="wall_east_collision">
+          <pose>4.05000 0.00000 1.21500 0 0 0</pose>
+          <geometry><box><size>0.02160 4.14720 2.43000</size></box></geometry>
+        </collision>
+        <visual name="wall_east_visual">
+          <pose>4.05000 0.00000 1.21500 0 0 0</pose>
+          <geometry><box><size>0.02160 4.14720 2.43000</size></box></geometry>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

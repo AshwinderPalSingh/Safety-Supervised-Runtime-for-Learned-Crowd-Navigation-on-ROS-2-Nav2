@@ -132,6 +132,11 @@ private:
   bool logged_intervention_active_ = false;
 
   double watchdog_window_s_ = 0.03;
+  // Phase 10 (S4.9): a launch-time-only switch (not exposed via onSetParameters - each
+  // evaluation episode gets a fresh launch, not a live reconfiguration mid-run), so the
+  // `policy_raw` eval config can run the policy with zero supervisor involvement, distinct from
+  // `policy_supervised` running the exact same policy with it enabled.
+  bool supervisor_enabled_ = true;
   double debug_inject_decision_delay_s_ = 0.0;
   double max_linear_vel_mps_ = 1.0;
   double max_angular_vel_rps_ = 2.0;
