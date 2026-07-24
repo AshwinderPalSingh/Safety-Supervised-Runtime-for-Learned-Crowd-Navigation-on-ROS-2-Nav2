@@ -67,12 +67,6 @@ class EpisodeMonitor(Node):
             self.path_length_m += math.hypot(dx, dy)
         self.latest_robot_xy = xy
 
-        if self.zone is not None and self.outcome is None:
-            cx, cy = self.zone['center_x'], self.zone['center_y']
-            hx, hy = self.zone['size_x'] / 2.0, self.zone['size_y'] / 2.0
-            if (cx - hx) <= xy[0] <= (cx + hx) and (cy - hy) <= xy[1] <= (cy + hy):
-                self.outcome = 'keepout_violation'
-
     def _on_pedestrians(self, msg):
         if self.latest_robot_xy is None:
             return
@@ -103,6 +97,23 @@ class EpisodeMonitor(Node):
     def _on_amcl_pose(self, msg):
         cov = msg.pose.covariance
         self.latest_amcl_cov_trace = cov[0] + cov[7]
+
+        # Keepout zones are authored and enforced entirely in the 'map' frame (zone_manager_node.py's
+        # own zone-storage comment, matching the KeepoutFilter costmap layer and the safety
+        # supervisor's forward-sim, both of which consume the same map-frame robot pose Nav2
+        # supplies to the controller). /ground_truth/robot_pose (used above, in _on_robot_pose)
+        # is Gazebo WORLD frame - comparing it against this map-frame zone spec was a genuine bug
+        # (found investigating why depot_keepout_block showed zero interventions even in the one
+        # episode the harness itself called a violation): the two numbers only looked comparable
+        # by the coincidence of this scenario's world-to-map offset, not because either config
+        # actually entered the real, costmap-enforced zone. AMCL's pose is already map-frame,
+        # matching every real consumer of zone geometry, so it's the correct source for this check.
+        if self.zone is not None and self.outcome is None:
+            xy = (msg.pose.pose.position.x, msg.pose.pose.position.y)
+            cx, cy = self.zone['center_x'], self.zone['center_y']
+            hx, hy = self.zone['size_x'] / 2.0, self.zone['size_y'] / 2.0
+            if (cx - hx) <= xy[0] <= (cx + hx) and (cy - hy) <= xy[1] <= (cy + hy):
+                self.outcome = 'keepout_violation'
 
     def _tick(self):
         if self.outcome is not None:

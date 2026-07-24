@@ -85,6 +85,18 @@ CORE_SCENARIOS = {
 # Named, permanent scenario (IMPLEMENTATION_PLAN.md S4.9.3) - replaces Phase 9's inconclusive
 # ad hoc zone placements. Run once per config, not part of the N=8 statistical matrix. Expected
 # outcome per config is documented in the plan, not just implied by the harness's own behavior.
+#
+# zone center_x=1.0 (not -0.5, its original value): zones are authored and enforced in the 'map'
+# frame (zone_manager_node.py's own storage comment), where this scenario's spawn (-3.0, 0.0 in
+# GAZEBO WORLD frame) localizes to map (0, 0) and the goal (2.0, 0.0) IS map frame directly - so
+# the map-frame path runs (0,0)->(2,0), and a zone meant to sit on that path needs a map-frame
+# x between 0 and 2, not -0.5 (which is behind the start, in a direction the robot never travels
+# toward). The original value was chosen with WORLD-frame intuition (roughly midway between
+# world x=-3 and world x=2) without accounting for the world/map offset - found only after the
+# first real run showed zero supervisor interventions across all three configs, including the
+# one the harness itself flagged as a violation (see docs/phase10-findings.md for the full
+# root-cause trace, including the matching fix to episode_monitor.py's own zone check, which had
+# the identical frame confusion on the harness's ground-truth side).
 KEEPOUT_BLOCK_SCENARIO = {
     "name": "depot_keepout_block",
     "world_file": _DEPOT_WORLD,
@@ -93,7 +105,7 @@ KEEPOUT_BLOCK_SCENARIO = {
     "spawn": _SPAWN,
     "goal": (2.0, 0.0),
     "num_pedestrians": 0,  # isolate the keep-out mechanism, not perception/crowd effects
-    "zone": {"zone_id": "keepout_block", "center_x": -0.5, "center_y": 0.0,
+    "zone": {"zone_id": "keepout_block", "center_x": 1.0, "center_y": 0.0,
              "size_x": 1.0, "size_y": 1.5},
 }
 

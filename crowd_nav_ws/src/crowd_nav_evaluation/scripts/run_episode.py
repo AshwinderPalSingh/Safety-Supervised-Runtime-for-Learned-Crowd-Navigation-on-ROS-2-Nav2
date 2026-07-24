@@ -143,7 +143,20 @@ def _sweep_stray_processes(log_dir):
                 except ProcessLookupError:
                     pass
             time.sleep(grace_s)
-        f.write("WARNING: some stray processes may have survived SIGKILL - check manually\n")
+        # Re-check after the SIGKILL grace period instead of assuming survival - found on the
+        # first real matrix run (not anticipated going in): the unconditional warning below fired
+        # for a pid that pgrep just hadn't been re-polled for since SIGKILL is unmaskable and had,
+        # in fact, already succeeded - a false alarm that would have wasted debugging time on
+        # every occurrence for the rest of the 139-episode run.
+        still_alive = set()
+        for pattern in SWEEP_PATTERNS:
+            out = subprocess.run(['pgrep', '-f', pattern], capture_output=True, text=True).stdout
+            still_alive.update(int(p) for p in out.split())
+        still_alive.discard(own_pid)
+        if still_alive:
+            f.write(f"WARNING: pids {sorted(still_alive)} survived SIGKILL - check manually\n")
+        else:
+            f.write("all stray pids confirmed dead after SIGKILL\n")
 
 
 def run(episode, log_dir):

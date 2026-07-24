@@ -47,7 +47,7 @@ def plot_efficiency_distributions(df, out_dir):
         for (scenario, config), sub in core.groupby(['scenario_name', 'config_name']):
             data.append(sub[metric].dropna().values)
             labels.append(f"{scenario}\n{config}")
-        ax.boxplot(data, labels=labels, showmeans=True)
+        ax.boxplot(data, tick_labels=labels, showmeans=True)
         ax.set_ylabel(metric)
         ax.set_title(f'{metric} distribution, successful episodes only')
         plt.xticks(rotation=45, ha='right')
