@@ -1221,8 +1221,19 @@ Gazebo, see §6). Separate nightly/manually-triggered workflow: launch the full 
 (Gazebo + Nav2 + one pedestrian) and drive one goal to completion in the open-arena world —
 not a correctness check, just a smoke test for launch-file and parameter-schema rot, which
 unit tests structurally can't catch and which is exactly what silently breaks in ROS 2
-workspaces over time. README "how to add a new policy" walkthrough (documented, using HEIGHT
-as the worked example, not implemented). Final MEASUREMENTS.md pass.
+workspaces over time. **Pinned before implementation, from Phase 10's own experience**: the
+smoke test must assert on the actual topics the stack depends on being live (starting with
+`/ground_truth/robot_pose` - the exact one that stopped publishing silently for three phases,
+`docs/phase10-findings.md`), not just that the launch succeeds and a goal is reached - a
+handful of "topic X published at least N messages" checks would have caught that bug in a day
+instead of three phases, since a dead topic with a passing goal is exactly the failure mode
+this tier exists to catch. README rewrite: lead with the results and the project's actual
+thesis (a bounded, verifiable safety mechanism with a real, measured capability cost and a
+derivable detection-margin limit - `docs/phase10-findings.md`'s overall assessment, not a
+sentence about installation), written for a reader who won't run it - the `docs/` findings
+chain is the evidence, the README is the argument built on it. Also: a "how to add a new
+policy" walkthrough (documented, using HEIGHT as the worked example, not implemented). Final
+MEASUREMENTS.md pass.
 
 **Phase 12 — Second policy integration: HEIGHT**
 This is the reusability proof `PolicyAdapter` was built for, not a replacement for the SARL

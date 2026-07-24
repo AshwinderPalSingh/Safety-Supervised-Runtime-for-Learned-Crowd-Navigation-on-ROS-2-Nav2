@@ -171,6 +171,18 @@ stop response, as the more likely source of this gap - worth a dedicated follow-
 pedestrian's own velocity around these specific windows) before treating it as confirmed, but
 better-supported by this data than the full-stop hypothesis considered first.
 
+This is a derivable limitation, not a surprising one, and it traces to the same root as the
+FOV/radius issues found in Phases 8-9: both the OOD `PROXIMITY` threshold and the forward-sim's
+1.0s lookahead (4 steps × `time_step_s=0.25s`) are values pulled from the reference SARL
+implementation's own training configuration - the proximity threshold explicitly derived from
+CrowdNav's `env.config` (`discomfort_dist=0.2`, `radii=0.3`, IMPLEMENTATION_PLAN.md v1.1), and
+`time_step_s` pinned against the checkpoint's own training config in `policy_adapter.yaml`,
+neither re-tuned against this robot's actual operating conditions. A margin sized for the
+training distribution's encounter geometry isn't guaranteed to cover a depot's reactive
+pedestrians closing distance faster than that distribution ever produced - the same pattern as
+inheriting a reference implementation's parameters into an environment whose real conditions
+weren't what those parameters were chosen for.
+
 ### Efficiency (successful episodes only)
 
 Confirms the review's explicit prediction: `policy_supervised` is measurably slower than
