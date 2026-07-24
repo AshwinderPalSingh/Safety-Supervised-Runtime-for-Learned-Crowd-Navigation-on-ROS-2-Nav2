@@ -23,7 +23,7 @@ shells pick it up automatically; only needed manually in non-interactive/scripte
 `scripts/check_dds_health.sh` and `scripts/ros2_teardown.sh` provide an automated dirty-state
 check and safe cleanup regardless of which RMW is active - see Phase 2 findings for both.
 
-**Status**: Phase 9 of 12 complete. Phase 2: baseline Nav2 + AMCL + SLAM, 5/5 goals both modes,
+**Status**: Phase 10 of 12 complete. Phase 2: baseline Nav2 + AMCL + SLAM, 5/5 goals both modes,
 verified against ground-truth pose (`docs/phase2-findings.md`). Phase 3: dynamic keep-out
 zones, verified with a real mid-navigation block-and-detour test (`docs/phase3-findings.md`).
 Phase 4: deterministic pedestrian simulation (HuNav dropped - see `IMPLEMENTATION_PLAN.md`
@@ -53,7 +53,20 @@ check sharing the controller's own costmap instance structurally, a 5-criteria O
 per-cause intervention logging - live-verified in Gazebo with three of its eight trigger causes
 firing for real, non-engineered reasons (a sustained collision rejection held for 90+
 consecutive ticks with zero misses) and a clean baseline run showing zero false positives
-(`docs/phase9-findings.md`). See `IMPLEMENTATION_PLAN.md` §3 for the full phase list.
+(`docs/phase9-findings.md`). Phase 10: the full 139-episode evaluation matrix (96 core + 40
+perception-noise sweep + 3 keep-out-zone episodes), piloted first per explicit review
+requirement. Found and fixed two significant bugs mid-phase rather than reporting through them:
+a Gazebo `PosePublisher` bug that had left ground-truth robot pose silently dead since Phase 4
+(retroactively meaning Phase 9's FOV filter had been inert the entire time it was "verified"),
+and a map/world coordinate-frame mismatch that made the keep-out-zone scenario's first run
+meaningless. Once fixed, that scenario produced a clean, decisive three-way result matching the
+original hypothesis (`docs/phase10-findings.md`), and the noise sweep found a sharp,
+reproducible failure cliff between perception-dropout 0.1 and 0.2, confirmed via rate-normalized
+intervention counts to be policy saturation rather than the supervisor working harder. The
+matrix also found a real, unflattering result: under reactive pedestrians, the supervised
+policy has a **higher** collision rate than both the raw policy and the stock MPPI baseline, in
+both scenario families - reported in full, not just the predicted efficiency cost. See
+`IMPLEMENTATION_PLAN.md` §3 for the full phase list.
 
 ## Known limitations (stated deliberately, not discovered as accidents)
 
@@ -84,10 +97,11 @@ visible up front rather than buried in a findings doc no one reads before citing
   classical ORCA baseline it's evaluated against. Full reasoning: `docs/phase0-findings.md`,
   `IMPLEMENTATION_PLAN.md` §1.8. A second, genuinely RL-trained policy (HEIGHT) is a scoped
   future phase (§3, Phase 12) specifically to close this gap.
-- **Ground-truth human perception by default.** Acceptable per the project's own design (see
-  `IMPLEMENTATION_PLAN.md` §1.4 of the original brief), but a real limitation until the
-  perception-degradation model (noise, dropout, latency, occlusion) is exercised in the
-  evaluation harness.
+- **Ground-truth human perception by default**, though the degradation model is now exercised
+  directly: Phase 10's noise sweep (`docs/phase10-findings.md`) swept `dropout_prob` from 0 to
+  0.5 and found a sharp failure cliff between 0.1 and 0.2 (success collapses from 7/8 to 0/8),
+  confirmed to be policy/metric saturation rather than a gradual decline or the supervisor
+  compensating harder for worse perception.
 - **The safety supervisor's OOD detector characterizes world-state novelty, not input-pipeline
   correctness.** Its five criteria (crowd size, proximity, relative speed, command magnitude,
   perception confidence) flag a scene unlike the training distribution; none of them can detect
@@ -96,13 +110,19 @@ visible up front rather than buried in a findings doc no one reads before citing
   `docs/phase9-findings.md` §"Design notes carried into Phase 10+"). A clean OOD-trigger rate is
   not, by itself, evidence the input pipeline is correct; that needs differential testing
   against a reference implementation, which is how the Phase 8 bug was actually found.
-- **A specific engineered keep-out-zone trigger for the safety supervisor wasn't cleanly
-  isolated in Phase 9's live Gazebo session** - ad hoc zone placements either blocked the global
-  planner upstream of the supervisor or left room for Nav2 to route around them before the local
-  controller ever needed to reject anything. The same rejection code path was exercised by a
-  real, non-engineered obstacle collision instead (rejected on 90+ consecutive ticks, zero
-  misses - `docs/phase9-findings.md`), so the mechanism is verified, but a direct keep-out-zone
-  demonstration is deferred to a pre-measured Phase 10 scenario rather than repeated ad hoc.
+- **The safety supervisor is not a strict safety improvement in every condition.** Phase 10's
+  full matrix (`docs/phase10-findings.md`) found that under reactive pedestrians - the fairest,
+  best-case comparison - `policy_supervised` has a *higher* collision rate than both the raw
+  (unsupervised) policy and the stock MPPI baseline, in both scenario families (25%/50% vs
+  12%/12%). Every one of those collisions had at least one real supervisor intervention logged
+  beforehand - the mechanism was engaged, not inert. The most plausible mechanism (not confirmed
+  beyond this dataset): the supervisor's full-stop response may not compose well with a reactive
+  pedestrian's own avoidance logic, which assumes a moving, predictable robot. The keep-out-zone
+  scenario, by contrast, shows the mechanism working exactly as designed in isolation (425/425
+  correct rejections, zero violations, `baseline_mppi` and `policy_raw` behaving exactly as
+  hypothesized) - the two results together say the supervisor reliably does what it's built to
+  do, without that composing into a guaranteed net safety win in the general crowd-navigation
+  case.
 
 ## Known upstream API/doc discrepancies (verified against real behavior, not assumed)
 

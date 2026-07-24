@@ -1,0 +1,4 @@
+episode_id,scenario_name,config_name,pedestrian_mode,seed,dropout_prob,outcome,duration_s,wall_s,path_length_m,min_human_distance_m,intervention_count_total,intervention_count_cause_0,intervention_count_cause_1,intervention_count_cause_2,intervention_count_cause_3,intervention_count_cause_4,intervention_count_cause_5,intervention_count_cause_6,intervention_count_cause_7
+pilot_open_arena_baseline_mppi,open_arena,baseline_mppi,reactive,0,0.0,success,11.6,20.57129729400185,2.755549753288703,0.5273750090210513,0,0,0,0,0,0,0,0,0
+pilot_open_arena_policy_raw,open_arena,policy_raw,reactive,0,0.0,success,21.0,29.239195717003895,4.501931087471698,0.44190267272638656,0,0,0,0,0,0,0,0,0
+pilot_open_arena_policy_supervised,open_arena,policy_supervised,reactive,0,0.0,collision,12.56,20.62885134499811,4.742093290039938,0.3800900567355599,7,0,7,0,0,0,0,0,0

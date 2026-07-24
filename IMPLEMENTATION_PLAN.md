@@ -1,10 +1,9 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.19 (2026-07-21, updated 2026-07-24) — Phase 10 rescoped, not yet built
+## Implementation Plan v1.20 (2026-07-21, updated 2026-07-24) — Phase 10 closed
 
 This document is the living plan for the project, updated as each phase lands rather than
-frozen at the start. Phases 0–9 are done as of this revision (§3 has current status per
-phase); Phase 10 is rescoped (§4.9) but not yet implemented; everything from Phase 10 onward is
-still plan, not implementation.
+frozen at the start. Phases 0–10 are done as of this revision (§3 has current status per
+phase); everything from Phase 11 onward is still plan, not implementation.
 
 **v1.1 changes** (post-review, same day): inserted a synthetic-adapter phase before SARL to
 decouple runtime-plumbing risk from SARL-search-correctness risk (§3, new Phase 6); confirmed
@@ -362,6 +361,21 @@ concrete ways plus two carried process notes (§4.9 has the full detail):
    change), and a stated contingency (§4.9.5) for isolating §4.8.1's FOV-restriction choice from
    the policy itself if depot results look bad enough to need it - one supplementary run using
    already-exposed parameters, zero new code.
+
+**v1.20 changes (2026-07-24)**: Phase 10 implemented and closed - full findings in
+docs/phase10-findings.md, summary in §3. Two bugs found and fixed mid-phase, both significant
+enough to change what the matrix's own results meant: a Gazebo `PosePublisher` bug that had
+left `/ground_truth/robot_pose` silently dead since Phase 4 (retroactively meaning Phase 9's
+FOV filter had been inert the whole time it was "verified"), and a map/world coordinate-frame
+mismatch that made `depot_keepout_block`'s first run meaningless (zero supervisor interventions
+across all three configs). Both root-caused via direct instrumentation rather than guessed at,
+fixed, and re-verified. The matrix itself surfaced one result harder to report than "underperforms
+on efficiency as predicted": under reactive pedestrians, `policy_supervised` has a *higher*
+collision rate than both `baseline_mppi` and `policy_raw`, in both scenario families - reported
+in full per the standing "report it even if my method didn't win" instruction, alongside the
+`depot_keepout_block` result that shows the supervisor's mechanism does work exactly as
+designed (425/425 correct rejections, zero violations) even while the collision-rate result
+shows it isn't a strict safety improvement in every condition.
 
 ---
 
@@ -750,8 +764,8 @@ Everything below lives in one colcon workspace, `crowd_nav_ws/src/`.
 | `crowd_nav_controller` | **Built and closed in Phase 7/8, see §4.6/§4.7.** `nav2_core::Controller` plugin: hold-last-action rate handling, inference-latency watchdog, failover to a genuinely embedded `nav2_mppi_controller::MPPIController` via pluginlib (not accel clamping/smoothing - `nav2_velocity_smoother` already owns that), `adapter_type` config switch (`dummy`/`sarl`), live perception via `GroundTruthHumanSource`. **Phase 9 (§4.8)**: instantiates `SafetySupervisor` directly (sharing its own `costmap_ros_`), calls it inside `run_policy_decision` after `selectAction()`, publishes `InterventionEvent` via a `LifecyclePublisher`. | Yes (nav2_core) |
 | `crowd_nav_safety_supervisor` | **Built and closed in Phase 9, see §4.8.** Forward-sim + costmap/keepout check, 5-criteria OOD detector, per-cause intervention logging (`InterventionEvent`). Pure C++ core (`SafetySupervisor`), no live ROS node needed for its own logic. | Yes (costmap_2d) |
 | ~~`crowd_nav_costmap_filters`~~ | **Built as `crowd_nav_zones` instead (Phase 3)** - same responsibility (zone-manager node: mask gen + reload via a real `map_server` instance + `AddZone`/`RemoveZone`, stock `KeepoutFilter`), different name chosen during implementation; correcting the table rather than leaving two names for one package. | Yes (map_server/costmap_2d) |
-| `crowd_nav_pedestrians` | **Rescoped v1.7 - HuNav dropped entirely, see §1.2.** A single deterministic seeded social-force ROS node (`reactive`/`non_reactive` as one config flag), ground-truth robot pose injected via a Gazebo `PosePublisher` plugin (not `/odom`), plus an off-by-default visual-only Gazebo actor mirror node. Built and closed in Phase 4. | No (Gazebo only, no HuNav dependency) |
-| `crowd_nav_evaluation` | Scenario suite, harness runner, metrics collector, CSV + plots | Yes (transitively) |
+| `crowd_nav_pedestrians` | **Rescoped v1.7 - HuNav dropped entirely, see §1.2.** A single deterministic seeded social-force ROS node (`reactive`/`non_reactive` as one config flag), ground-truth robot pose (not `/odom`) via `robot_pose_extractor.py`, plus an off-by-default visual-only Gazebo actor mirror node. Built and closed in Phase 4. **Phase 10**: the original `PosePublisher`-plugin pose source was found to never actually publish on this gz-sim version; replaced with a `scene_broadcaster`/`TFMessage`-based `robot_pose_extractor.py` node, same topic/type, zero downstream changes (docs/phase10-findings.md). | No (Gazebo only, no HuNav dependency) |
+| `crowd_nav_evaluation` | **Built and closed in Phase 10, see docs/phase10-findings.md.** Scenario suite (`scenarios.py`), per-episode harness runner (`run_episode.py`, fresh process tree per episode, own stray-process sweep), matrix driver (`run_matrix.py`), in-episode ground-truth monitor (`episode_monitor.py`), plots (`make_plots.py`). | Yes (transitively) |
 | `crowd_nav_bringup` | Top-level launch files tying it all together, baseline MPPI config, AMCL/SLAM launch args | Yes |
 
 Dependency direction is deliberate: perception/observation/adapters have zero Nav2
@@ -1162,35 +1176,44 @@ elsewhere. Full trail: `docs/phase9-findings.md`.
 - Full-workspace rebuild plus every prior phase's test suite re-run clean (60 tests total across
   5 packages, no regression).
 
-**Phase 10 — Evaluation harness (rescoped v1.19, see §4.9)**
+**Phase 10 — Evaluation harness (rescoped v1.19, see §4.9). CLOSED, see docs/phase10-findings.md.**
 Seeded scenario suite (open-arena × structured-depot) × (`baseline_mppi`, `policy_raw`,
 `policy_supervised`) × (`reactive`, `non_reactive`), clean episode termination on
-collision/timeout, CSV + metrics + plots, perception-noise sweep. **Three requirements from
-review, pinned before implementation (§4.9 has the full reasoning for each)**:
-1. **Pilot the matrix before running it** (§4.9.1): one scenario, one seed, all three configs,
-   end to end, checked by hand - so a harness bug is found after twenty minutes, not after an
-   overnight run.
-2. **N and the noise-sweep points decided now, not after seeing any results** (§4.9.2): `N=8`
-   seeds per core-matrix cell (96 episodes), a `dropout_prob ∈ {0.0, 0.1, 0.2, 0.3, 0.5}` sweep
-   on `policy_supervised`/`open_arena`/`reactive` only (40 episodes) - committed here, before
-   any episode has run, not chosen after glancing at partial results.
-3. **`policy_supervised` underperforming `baseline_mppi` on depot efficiency is the expected
-   result, and the intervention-rate-by-cause comparison across scenario families is the
-   headline number** (§4.9.4) - not "my method won everything," which would be more suspicious
-   than a result that wins on safety and loses on path length/duration in an out-of-distribution
-   environment.
+collision/timeout, CSV + metrics + plots, perception-noise sweep. All three requirements from
+review met, each verified rather than assumed:
+1. **Piloted before the full run** (§4.9.1) - and the pilot caught real bugs (a lost executable
+   bit, a stray-Gazebo-process corruption risk) before they could waste an overnight run.
+2. **N and the noise-sweep points decided in §4.9.2 before any episode ran**: `N=8` seeds/cell
+   (96 core episodes), `dropout_prob ∈ {0.0, 0.1, 0.2, 0.3, 0.5}` sweep on
+   `policy_supervised`/`open_arena`/`reactive` (40 episodes) - both numbers held unchanged
+   through the full run.
+3. **The expected-result-shape framing held, and then some**: `policy_supervised` underperforms
+   `baseline_mppi` on efficiency as predicted, but the matrix also surfaced a less flattering,
+   unpredicted result - a **higher** collision rate than both alternatives under reactive
+   pedestrians, in both scenario families - reported prominently in the findings doc rather than
+   the efficiency gap alone.
 
-Plus: a named, permanent `depot_keepout_block` scenario (§4.9.3) replacing Phase 9's ad hoc,
-inconclusive zone-placement attempts - one run per config (not part of the N=8 matrix), with an
-explicit expected outcome per config, including `policy_raw` **expected to violate the zone**
-(SARL has no concept of a static keep-out region at all, which is exactly the failure mode the
-whole project exists to catch). And a process note (§4.9.5): if depot results look
-catastrophic, isolate §4.8.1's FOV-restriction choice with one supplementary reference-FOV run
-(already-exposed parameters, zero new code) before concluding anything about the policy itself.
-**Done:** the full matrix runs unattended after the pilot passes, producing CSV + plots with
-variance/distributions reported (not just means); the cross-family intervention-rate comparison
-and the `depot_keepout_block` per-config outcomes are both reported explicitly, not left
-implicit in a CSV.
+`depot_keepout_block` (§4.9.3) initially produced a meaningless result: zero supervisor
+interventions across all three configs, contradicting the plan's own stated expectation that
+`policy_raw` would violate the zone. Root-caused (not assumed) to a coordinate-frame bug: the
+harness's own ground-truth zone check compared a Gazebo-world-frame pose against a map-frame-
+intended zone spec, while the safety supervisor's own forward-sim (correctly, internally
+consistently) operated entirely in map frame. Fixed in both the harness (`episode_monitor.py`
+now checks `/amcl_pose`, not `/ground_truth/robot_pose`) and the scenario definition (the zone's
+map-frame position was itself wrong, chosen with world-frame intuition). Re-run to a decisive
+result matching the original hypothesis: `baseline_mppi` routes around the zone via the global
+costmap planner, `policy_raw` drives straight into it, `policy_supervised`'s forward-sim
+rejects the identical approach 425/425 times (zero violations) but has no way to route around
+it, so it gets stuck rather than succeeding. Full root-cause trace and the noise-sweep cliff's
+rate-normalized saturation analysis (ruling out "supervisor floor" as an alternative
+explanation) are both in docs/phase10-findings.md, not left implicit in a CSV.
+
+A previously-undiagnosed Gazebo bug was also found and fixed this phase: `PosePublisher` never
+actually published on this gz-sim version, meaning `/ground_truth/robot_pose` had never worked
+- which retroactively means Phase 9's FOV-filter feature had been silently inert since it was
+built (same topic, same dependency). Fixed via a `scene_broadcaster`/`TFMessage`-based
+replacement (`robot_pose_extractor.py`), confirmed to fix both the harness's own metrics and
+(as a side effect, same topic) the FOV filter.
 
 **Phase 11 — CI and docs**
 GitHub Actions per-PR gate: build workspace + compile plugins + run unit tests + lint (no

@@ -1,0 +1,4 @@
+# Phase 10 evaluation harness: keep episodes.csv/interventions.csv/plots (referenced directly by
+# docs/phase10-findings.md), exclude the raw per-episode ROS/Gazebo launch logs (regeneratable,
+# not human-authored, ~18MB of simulation debug noise for the full matrix).
+crowd_nav_ws/src/crowd_nav_evaluation/results*/logs/
