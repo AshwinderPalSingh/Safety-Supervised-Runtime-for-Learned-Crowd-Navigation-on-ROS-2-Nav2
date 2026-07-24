@@ -249,23 +249,18 @@
     </plugin>
   </gazebo>
 
-  <!-- Ground-truth pose publisher (Phase 4, IMPLEMENTATION_PLAN.md S1.2/S3): the pedestrian
-       simulator needs the robot's real position, not /odom (odometry drift has no business
-       leaking into how simulated pedestrians react to the robot). Publishes this model's pose
-       directly from the physics engine's own state, bypassing odometry/localization entirely -
-       bridged into ROS via ros_gz_bridge in crowd_nav_pedestrians' launch file. -->
-  <gazebo>
-    <plugin filename="libignition-gazebo-pose-publisher-system.so" name="ignition::gazebo::systems::PosePublisher">
-      <publish_model_pose>true</publish_model_pose>
-      <publish_link_pose>false</publish_link_pose>
-      <publish_visual_pose>false</publish_visual_pose>
-      <publish_collision_pose>false</publish_collision_pose>
-      <publish_sensor_pose>false</publish_sensor_pose>
-      <publish_nested_model_pose>false</publish_nested_model_pose>
-      <use_pose_vector_msg>false</use_pose_vector_msg>
-      <static_publisher>false</static_publisher>
-    </plugin>
-  </gazebo>
+  <!-- Ground-truth pose (Phase 4, IMPLEMENTATION_PLAN.md S1.2/S3; fix found building Phase 10):
+       the pedestrian simulator needs the robot's real position, not /odom (odometry drift has no
+       business leaking into how simulated pedestrians react to the robot). This used to be a
+       PosePublisher plugin here (publish_model_pose=true) but that never actually publishes
+       anything on this gz-sim version (6.18.0) - confirmed with `ign topic -e`, zero messages
+       even while the robot was actively driving. publish_link_pose=true does make the topic
+       active, but multiplexes every link's pose (link-relative, not world-frame) onto the same
+       topic with no way to disambiguate once bridged to a bare geometry_msgs/msg/Pose. The
+       working fix instead bridges the scene_broadcaster plugin's per-world dynamic_pose/info
+       topic (already present in every world file, no config needed here) and filters it down to
+       this model by name - see crowd_nav_pedestrians/scripts/robot_pose_extractor.py and its
+       launch file. -->
 
   <gazebo reference="base_link">
     <material>Gazebo/Grey</material>

@@ -25,6 +25,14 @@ def generate_launch_description():
         'controller_plugin', default_value='crowd_nav_controller::CrowdNavController')
     adapter_type_arg = DeclareLaunchArgument('adapter_type', default_value='sarl')
     supervisor_enabled_arg = DeclareLaunchArgument('supervisor_enabled', default_value='true')
+    # Phase 10 noise sweep (S4.9.2) - off by default, matching DegradationParams' own
+    # convention; found while wiring the sweep that CrowdNavController never exposed these at
+    # all before now (docs/phase9-findings.md addendum's own reachability-audit lesson, applied
+    # here before running anything, not after).
+    perception_dropout_prob_arg = DeclareLaunchArgument(
+        'perception_dropout_prob', default_value='0.0')
+    perception_degradation_seed_arg = DeclareLaunchArgument(
+        'perception_degradation_seed', default_value='0')
 
     spawn = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -76,6 +84,10 @@ def generate_launch_description():
         'FollowPath.adapter_type': LaunchConfiguration('adapter_type'),
         'FollowPath.supervisor_enabled': ParameterValue(
             LaunchConfiguration('supervisor_enabled'), value_type=bool),
+        'FollowPath.perception_dropout_prob': ParameterValue(
+            LaunchConfiguration('perception_dropout_prob'), value_type=float),
+        'FollowPath.perception_degradation_seed': ParameterValue(
+            LaunchConfiguration('perception_degradation_seed'), value_type=int),
     }
     controller_server = Node(
         package='nav2_controller', executable='controller_server', output='screen',
@@ -124,6 +136,8 @@ def generate_launch_description():
         controller_plugin_arg,
         adapter_type_arg,
         supervisor_enabled_arg,
+        perception_dropout_prob_arg,
+        perception_degradation_seed_arg,
         spawn,
         zones,
         map_server,

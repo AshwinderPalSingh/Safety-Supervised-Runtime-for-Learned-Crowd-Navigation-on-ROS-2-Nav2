@@ -14,6 +14,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 install(PROGRAMS
   scripts/pedestrian_sim_node.py
   scripts/actor_mirror_node.py
+  scripts/robot_pose_extractor.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

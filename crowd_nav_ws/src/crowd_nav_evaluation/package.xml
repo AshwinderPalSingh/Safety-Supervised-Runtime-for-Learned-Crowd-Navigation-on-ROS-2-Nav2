@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypeins="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>crowd_nav_evaluation</name>
+  <version>0.1.0</version>
+  <description>
+    Phase 10: seeded scenario suite, harness runner, metrics collector, CSV + plots
+    (IMPLEMENTATION_PLAN.md S3 Phase 10 / S4.9). Each episode runs as its own subprocess with a
+    fresh ROS graph; outcome/metrics are determined from ground truth, never the robot's own
+    perception, matching this project's established verification discipline.
+  </description>
+  <maintainer email="ashwinder4377@gmail.com">ashwinder</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>crowd_nav_bringup</exec_depend>
+  <exec_depend>crowd_nav_pedestrians</exec_depend>
+  <exec_depend>crowd_nav_safety_supervisor</exec_depend>
+  <exec_depend>crowd_nav_zones</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

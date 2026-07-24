@@ -79,6 +79,20 @@ void CrowdNavController::configure(
     node, plugin_name_ + ".perception_fov_half_angle_rad", rclcpp::ParameterValue(M_PI_2));
   nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".perception_max_range_m", rclcpp::ParameterValue(8.0));
+  // Off (0.0) by default, matching DegradationParams' own "oracle passthrough unless
+  // configured" convention (S4.2) - Phase 10's noise sweep (S4.9.2) is what actually turns this
+  // on. Found while wiring the sweep, not before: this parameter didn't exist until now, so
+  // dropout_prob was silently unreachable from any launch file - the exact "enumerated but
+  // unreachable" defect class the Phase 9 addendum's reachability audit was about, caught here
+  // before the sweep ran, not after. degradation_seed reuses the scenario's own seed directly -
+  // safe despite the RNG-substream-isolation requirement (S4.2), since pedestrian_sim_node.py's
+  // RNG (Python) and this class's RNG (C++ std::mt19937_64) are already separate processes with
+  // unrelated RNG implementations; substream derivation matters only for two consumers sharing
+  // one C++ stream, which doesn't apply across a process boundary.
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".perception_dropout_prob", rclcpp::ParameterValue(0.0));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".perception_degradation_seed", rclcpp::ParameterValue(0));
   // Empty default (not PARAMETER_STRING/required): nav2_params.yaml is loaded as a raw YAML
   // params file with no launch-substitution preprocessing (confirmed against how this
   // project's own launch files pass it to Node(parameters=[...]) - "$(find-pkg-share ...)"
@@ -142,6 +156,10 @@ void CrowdNavController::configure(
     node->get_parameter(plugin_name_ + ".perception_fov_half_angle_rad").as_double();
   const double perception_max_range_m =
     node->get_parameter(plugin_name_ + ".perception_max_range_m").as_double();
+  const double perception_dropout_prob =
+    node->get_parameter(plugin_name_ + ".perception_dropout_prob").as_double();
+  const int perception_degradation_seed =
+    node->get_parameter(plugin_name_ + ".perception_degradation_seed").as_int();
   watchdog_window_s_ = node->get_parameter(plugin_name_ + ".watchdog_window_s").as_double();
   debug_inject_decision_delay_s_ =
     node->get_parameter(plugin_name_ + ".debug_inject_decision_delay_s").as_double();
@@ -188,6 +206,8 @@ void CrowdNavController::configure(
   DegradationParams perception_params;
   perception_params.fov_half_angle_rad = perception_fov_half_angle_rad;
   perception_params.max_range_m = perception_max_range_m;
+  perception_params.dropout_prob = perception_dropout_prob;
+  perception_params.degradation_seed = static_cast<uint64_t>(perception_degradation_seed);
   human_source_ = std::make_unique<GroundTruthHumanSource>(
     node, pedestrian_topic, robot_pose_topic, perception_params);
 

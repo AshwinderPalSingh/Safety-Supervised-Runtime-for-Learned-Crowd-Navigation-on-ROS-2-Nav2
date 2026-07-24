@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""Scenario/config/matrix definitions for the Phase 10 evaluation harness
+(IMPLEMENTATION_PLAN.md S4.9). Plain data, imported directly by run_episode.py/run_matrix.py
+(installed side by side in lib/crowd_nav_evaluation/, no package __init__ needed - a script's
+own directory is always on sys.path when run directly).
+
+N and the noise-sweep points are committed here, in one place, matching S4.9.2's explicit
+"decided now, not after seeing any results" requirement - nothing downstream should introduce
+a second, different number.
+"""
+
+CORE_SEEDS_N = 8
+NOISE_SWEEP_DROPOUT_PROBS = (0.0, 0.1, 0.2, 0.3, 0.5)
+NOISE_SWEEP_SEEDS_N = 8
+
+MAX_EPISODE_DURATION_S = 120.0
+# Ground-truth collision definition for the harness's OWN outcome determination - deliberately
+# this robot's real physical radius (matching crowd_nav_control/diff_drive_controller.yaml's
+# world, not policy_radius_m's training-distribution value, S4.3) plus the pedestrian sim's own
+# real radius, since the harness measures actual physical safety, not training-distribution
+# matching.
+ROBOT_PHYSICAL_RADIUS_M = 0.14
+PED_RADIUS_M = 0.25
+COLLISION_DISTANCE_M = ROBOT_PHYSICAL_RADIUS_M + PED_RADIUS_M
+
+
+CONFIGS = {
+    "baseline_mppi": {
+        "controller_plugin": "nav2_mppi_controller::MPPIController",
+        "adapter_type": "dummy",  # unused - MPPIController never reads FollowPath.adapter_type
+        "supervisor_enabled": "false",
+    },
+    "policy_raw": {
+        "controller_plugin": "crowd_nav_controller::CrowdNavController",
+        "adapter_type": "sarl",
+        "supervisor_enabled": "false",
+    },
+    "policy_supervised": {
+        "controller_plugin": "crowd_nav_controller::CrowdNavController",
+        "adapter_type": "sarl",
+        "supervisor_enabled": "true",
+    },
+}
+
+# Reused across every scenario in a family - kept here once rather than repeated per scenario
+# dict, so the two families stay directly comparable in the one dimension that matters (size),
+# per S4.9's "same footprint as depot, no clutter" design.
+_OPEN_ARENA_WORLD = "open_arena.sdf"
+_OPEN_ARENA_MAP = "open_arena.yaml"
+_DEPOT_WORLD = "depot_scaled.sdf"
+_DEPOT_MAP = "depot_scaled.yaml"
+_SPAWN = (-3.0, 0.0, 0.0)
+
+# world_name is the SDF <world name="..."> value, NOT the world_file filename above - Gazebo
+# topics (scene_broadcaster's dynamic_pose/info, used for ground-truth pose - see
+# robot_pose_extractor.py) are namespaced by this, and there's no mechanical way to derive one
+# from the other, so both are carried explicitly end to end (run_episode.py passes both to their
+# respective launch files).
+_OPEN_ARENA_WORLD_NAME = "crowd_nav_open_arena"
+_DEPOT_WORLD_NAME = "crowd_nav_depot_scaled"
+
+# Core matrix: 2 families x 2 pedestrian modes, N=8 seeds each (seeds assigned outside this
+# dict, see iter_core_episodes() below) - num_pedestrians=4 is deliberately below
+# SafetySupervisorConfig::max_train_humans (5 default) so CROWD_SIZE isn't a structural given
+# for every episode (IMPLEMENTATION_PLAN.md S4.8.5/phase9-findings.md's own CROWD_SIZE finding).
+CORE_SCENARIOS = {
+    "open_arena": {
+        "world_file": _OPEN_ARENA_WORLD,
+        "world_name": _OPEN_ARENA_WORLD_NAME,
+        "map": _OPEN_ARENA_MAP,
+        "spawn": _SPAWN,
+        "goal": (3.0, 0.0),
+        "num_pedestrians": 4,
+    },
+    "depot": {
+        "world_file": _DEPOT_WORLD,
+        "world_name": _DEPOT_WORLD_NAME,
+        "map": _DEPOT_MAP,
+        "spawn": _SPAWN,
+        "goal": (2.0, 0.0),
+        "num_pedestrians": 4,
+    },
+}
+
+# Named, permanent scenario (IMPLEMENTATION_PLAN.md S4.9.3) - replaces Phase 9's inconclusive
+# ad hoc zone placements. Run once per config, not part of the N=8 statistical matrix. Expected
+# outcome per config is documented in the plan, not just implied by the harness's own behavior.
+KEEPOUT_BLOCK_SCENARIO = {
+    "name": "depot_keepout_block",
+    "world_file": _DEPOT_WORLD,
+    "world_name": _DEPOT_WORLD_NAME,
+    "map": _DEPOT_MAP,
+    "spawn": _SPAWN,
+    "goal": (2.0, 0.0),
+    "num_pedestrians": 0,  # isolate the keep-out mechanism, not perception/crowd effects
+    "zone": {"zone_id": "keepout_block", "center_x": -0.5, "center_y": 0.0,
+             "size_x": 1.0, "size_y": 1.5},
+}
+
+
+def iter_core_episodes():
+    """Yields one dict per core-matrix episode: scenario name, scenario def, config name,
+    config def, pedestrian mode, seed. 2 families x 3 configs x 2 modes x N=8 = 96 episodes."""
+    for scenario_name, scenario in CORE_SCENARIOS.items():
+        for config_name, config in CONFIGS.items():
+            for mode in ("reactive", "non_reactive"):
+                for seed in range(CORE_SEEDS_N):
+                    yield {
+                        "episode_id": f"{scenario_name}_{config_name}_{mode}_seed{seed}",
+                        "scenario_name": scenario_name,
+                        "scenario": scenario,
+                        "config_name": config_name,
+                        "config": config,
+                        "pedestrian_mode": mode,
+                        "seed": seed,
+                        "dropout_prob": 0.0,
+                        "zone": None,
+                    }
+
+
+def iter_noise_sweep_episodes():
+    """policy_supervised / open_arena / reactive only (S4.9.2) - isolates the perception
+    effect from depot's own navigability difficulty. 5 dropout points x N=8 = 40 episodes."""
+    scenario = CORE_SCENARIOS["open_arena"]
+    config = CONFIGS["policy_supervised"]
+    for dropout_prob in NOISE_SWEEP_DROPOUT_PROBS:
+        for seed in range(NOISE_SWEEP_SEEDS_N):
+            yield {
+                "episode_id": f"noise_sweep_dropout{dropout_prob}_seed{seed}",
+                "scenario_name": "open_arena",
+                "scenario": scenario,
+                "config_name": "policy_supervised",
+                "config": config,
+                "pedestrian_mode": "reactive",
+                "seed": seed,
+                "dropout_prob": dropout_prob,
+                "zone": None,
+            }
+
+
+def iter_keepout_block_episodes():
+    """One run per config (S4.9.3) - a decisive demonstration plus a permanent regression
+    test, not a statistical distribution, so it isn't seeded/repeated like the core matrix."""
+    scenario = KEEPOUT_BLOCK_SCENARIO
+    for config_name, config in CONFIGS.items():
+        yield {
+            "episode_id": f"depot_keepout_block_{config_name}",
+            "scenario_name": "depot_keepout_block",
+            "scenario": scenario,
+            "config_name": config_name,
+            "config": config,
+            "pedestrian_mode": "reactive",
+            "seed": 0,
+            "dropout_prob": 0.0,
+            "zone": scenario["zone"],
+        }

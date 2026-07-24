@@ -18,17 +18,39 @@ def generate_launch_description():
     num_pedestrians = LaunchConfiguration('num_pedestrians')
     max_speed = LaunchConfiguration('max_speed')
     mirror_enabled = LaunchConfiguration('mirror_enabled')
-    world_name = 'crowd_nav_depot_scaled'
+    world_name = LaunchConfiguration('world_name')
 
+    # PosePublisher's publish_model_pose (crowd_nav_description/urdf/nvis_3302ard.xacro) never
+    # actually publishes on this gz-sim version (6.18.0) - confirmed with `ign topic -e`, zero
+    # messages even while the robot was actively driving (found building Phase 10, see
+    # robot_pose_extractor.py's docstring for the full investigation). scene_broadcaster (present
+    # in every world file already) is the working alternative: bridge its Pose_V stream to
+    # TFMessage, then filter to just the robot entity in a dedicated node so every existing
+    # /ground_truth/robot_pose consumer needs zero changes.
     robot_pose_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
         name='ground_truth_pose_bridge',
         output='screen',
+        parameters=[{'use_sim_time': True}],
         arguments=[
-            '/model/nvis_3302ard/pose@geometry_msgs/msg/Pose[ignition.msgs.Pose',
+            [
+                '/world/', world_name, '/dynamic_pose/info',
+                '@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V',
+            ],
         ],
-        remappings=[('/model/nvis_3302ard/pose', '/ground_truth/robot_pose')],
+    )
+
+    robot_pose_extractor = Node(
+        package='crowd_nav_pedestrians',
+        executable='robot_pose_extractor.py',
+        name='robot_pose_extractor',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'robot_model_name': 'nvis_3302ard',
+            'input_topic': ['/world/', world_name, '/dynamic_pose/info'],
+        }],
     )
 
     pedestrian_sim = Node(
@@ -54,8 +76,8 @@ def generate_launch_description():
         name='mirror_service_bridge',
         output='screen',
         arguments=[
-            f'/world/{world_name}/create@ros_gz_interfaces/srv/SpawnEntity',
-            f'/world/{world_name}/set_pose@ros_gz_interfaces/srv/SetEntityPose',
+            ['/world/', world_name, '/create@ros_gz_interfaces/srv/SpawnEntity'],
+            ['/world/', world_name, '/set_pose@ros_gz_interfaces/srv/SetEntityPose'],
         ],
         condition=IfCondition(mirror_enabled),
     )
@@ -83,7 +105,12 @@ def generate_launch_description():
         # default), since the node's own 1.0 m/s default can never exceed that threshold.
         DeclareLaunchArgument('max_speed', default_value='1.0'),
         DeclareLaunchArgument('mirror_enabled', default_value='false'),
+        # Gazebo world name (the SDF <world name="..."> value), NOT the world_file .sdf filename
+        # used by spawn_robot.launch.py - the two aren't the same string and there's no existing
+        # mapping between them, so callers (run_episode.py) pass both explicitly.
+        DeclareLaunchArgument('world_name', default_value='crowd_nav_depot_scaled'),
         robot_pose_bridge,
+        robot_pose_extractor,
         pedestrian_sim,
         mirror_service_bridge,
         actor_mirror,
