@@ -253,6 +253,72 @@ TEST(GroundTruthHumanSource, NumDegradedLastCallCountsOnlyDropoutNotFovExclusion
   EXPECT_EQ(source.numDegradedLastCall(), 0u);
 }
 
+// docs/audit.md S1.3: GroundTruthHumanSource reads a privileged Gazebo WORLD-frame ground
+// truth, but WorldState.robot (and everything the policy/OOD checks compare humans against) is
+// MAP frame - confirmed by live measurement to differ by a real, non-negligible offset for this
+// project's scenarios. setRobotMapPose() is the fix: getHumans() must translate every returned
+// human position by (map pose - world pose) so it's directly comparable to state.robot.
+TEST(GroundTruthHumanSource, SetRobotMapPoseCorrectsForWorldMapFrameOffset)
+{
+  DegradationParams params;  // all zero/off - isolate the frame correction from noise/dropout
+  GroundTruthHumanSource source(params);
+
+  // A human at world (5.0, 2.0). Robot's world pose is (3.0, 0.0) - matching this project's
+  // real, confirmed offset direction and magnitude (docs/audit.md S1.3's live measurement:
+  // world - map ~= (-2.9, -0.07), i.e. map = world + ~3 in x).
+  source.setRobotPose(3.0, 0.0, 0.0);
+  source.ingestPedestrian(1, 5.0, 2.0, 0.0, 0.0, t(0.0));
+
+  // Robot's MAP pose is (0.0, 0.0) - the offset (map - world) is (-3.0, 0.0), so the human
+  // should be reported at map (5.0 - 3.0, 2.0 - 0.0) = (2.0, 2.0), NOT the raw world (5.0, 2.0).
+  source.setRobotMapPose(0.0, 0.0);
+  auto humans = source.getHumans(t(0.0));
+
+  ASSERT_EQ(humans.size(), 1u);
+  EXPECT_DOUBLE_EQ(humans[0].x, 2.0);
+  EXPECT_DOUBLE_EQ(humans[0].y, 2.0);
+  // Sanity check on the test itself: if this ever regressed to a no-op, the raw world value
+  // (5.0) would show up instead - fail loudly, not silently, if that happens.
+  EXPECT_NE(humans[0].x, 5.0);
+}
+
+TEST(GroundTruthHumanSource, SetRobotMapPoseIsIdentityWhenWorldAndMapPosesMatch)
+{
+  DegradationParams params;
+  GroundTruthHumanSource source(params);
+
+  // If world and map poses genuinely coincide (offset zero), the correction must be a no-op -
+  // this is the case every existing test above already implicitly relies on never having been
+  // broken by this fix, made explicit here.
+  source.setRobotPose(1.0, -1.0, 0.0);
+  source.setRobotMapPose(1.0, -1.0);
+  source.ingestPedestrian(1, 4.0, 4.0, 0.0, 0.0, t(0.0));
+
+  auto humans = source.getHumans(t(0.0));
+  ASSERT_EQ(humans.size(), 1u);
+  EXPECT_DOUBLE_EQ(humans[0].x, 4.0);
+  EXPECT_DOUBLE_EQ(humans[0].y, 4.0);
+}
+
+TEST(GroundTruthHumanSource, PassesThroughUnchangedWhenMapPoseNeverSet)
+{
+  // Backward-compatibility/safety case: a caller that never calls setRobotMapPose() at all
+  // (every test above this point, and any HumanStateSource consumer that doesn't know about
+  // this method) must see exactly the old behavior - raw ingested positions, unmodified. This
+  // is also what stops the correction from inventing a wrong offset before the controller has
+  // ever supplied one.
+  DegradationParams params;
+  GroundTruthHumanSource source(params);
+
+  source.setRobotPose(3.0, 0.0, 0.0);
+  source.ingestPedestrian(1, 5.0, 2.0, 0.0, 0.0, t(0.0));
+  auto humans = source.getHumans(t(0.0));
+
+  ASSERT_EQ(humans.size(), 1u);
+  EXPECT_DOUBLE_EQ(humans[0].x, 5.0);
+  EXPECT_DOUBLE_EQ(humans[0].y, 2.0);
+}
+
 int main(int argc, char ** argv)
 {
   testing::InitGoogleTest(&argc, argv);

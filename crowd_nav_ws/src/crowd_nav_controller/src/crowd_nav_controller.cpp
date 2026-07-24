@@ -373,6 +373,12 @@ WorldState CrowdNavController::buildWorldState(
     state.robot.gy = state.robot.py;
   }
 
+  // Frame-bug fix (docs/audit.md S1.3): human_source_ may be reading a privileged ground-truth
+  // channel in a different frame than the map-frame pose Nav2 supplies above
+  // (GroundTruthHumanSource does; a real sensor-based source wouldn't need to). Telling it this
+  // tick's map-frame pose before asking for humans lets it correct for that itself - see
+  // HumanStateSource::setRobotMapPose.
+  human_source_->setRobotMapPose(state.robot.px, state.robot.py);
   state.humans = human_source_->getHumans(query_time);
   return state;
 }

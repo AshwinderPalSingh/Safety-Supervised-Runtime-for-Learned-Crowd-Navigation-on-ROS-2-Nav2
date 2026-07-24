@@ -33,6 +33,12 @@ def generate_launch_description():
         'perception_dropout_prob', default_value='0.0')
     perception_degradation_seed_arg = DeclareLaunchArgument(
         'perception_degradation_seed', default_value='0')
+    # OOD-reachability audit (docs/audit.md S1.1): exposes CrowdNavController's existing
+    # debug_inject_decision_delay_s test hook (already implemented, already a real ROS param -
+    # only never previously reachable from this launch file) so the harness can demonstrate
+    # INFERENCE_TIMEOUT firing for real rather than leave it a permanently-untested mechanism.
+    debug_inject_decision_delay_s_arg = DeclareLaunchArgument(
+        'debug_inject_decision_delay_s', default_value='0.0')
 
     spawn = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -88,6 +94,8 @@ def generate_launch_description():
             LaunchConfiguration('perception_dropout_prob'), value_type=float),
         'FollowPath.perception_degradation_seed': ParameterValue(
             LaunchConfiguration('perception_degradation_seed'), value_type=int),
+        'FollowPath.debug_inject_decision_delay_s': ParameterValue(
+            LaunchConfiguration('debug_inject_decision_delay_s'), value_type=float),
     }
     controller_server = Node(
         package='nav2_controller', executable='controller_server', output='screen',
@@ -138,6 +146,7 @@ def generate_launch_description():
         supervisor_enabled_arg,
         perception_dropout_prob_arg,
         perception_degradation_seed_arg,
+        debug_inject_decision_delay_s_arg,
         spawn,
         zones,
         map_server,

@@ -105,6 +105,10 @@ public:
   // theta: robot's current heading (radians, world frame) - required now that the FOV check
   // (S4.8.1) needs it, unlike the range-only check this replaces which only needed position.
   void setRobotPose(double x, double y, double theta);
+  // HumanStateSource::setRobotMapPose override - see that method's comment for the frame-bug
+  // this exists to fix. Called by the controller once per tick with the SAME map-frame pose
+  // WorldState.robot is populated from, so getHumans() can return humans in that frame too.
+  void setRobotMapPose(double x, double y) override;
 
 private:
   void onPedestrianArray(const crowd_nav_pedestrians::msg::PedestrianArray::SharedPtr msg);
@@ -122,6 +126,13 @@ private:
   // (x, y, theta) - theta added v1.17/Phase 9 for the FOV check (S4.8.1); unset until the first
   // setRobotPose()/onRobotPose() call, same "not available yet" semantics robot_xy_ had before.
   std::optional<std::tuple<double, double, double>> robot_pose_;
+
+  // The robot's current MAP-frame pose (set via setRobotMapPose(), map/world frame-bug fix -
+  // see docs/audit.md S1.3). Unset until the controller's first call; getHumans() passes raw
+  // world-frame positions through unchanged if this is still unset rather than guessing at an
+  // offset, which the controller's own use (map-frame Nav2 pose always available before
+  // computeVelocityCommands() ever runs) means should not normally happen in practice.
+  std::optional<std::pair<double, double>> robot_map_pose_;
 
   // Accumulator (mutated by degrade(), non-const) vs. the const-readable snapshot
   // numDegradedLastCall() exposes - see that method's comment for why two members are needed.

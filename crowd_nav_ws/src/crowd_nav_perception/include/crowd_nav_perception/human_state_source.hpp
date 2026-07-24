@@ -36,6 +36,15 @@ public:
   // so a source with no degradation concept (e.g. TrackedHumanSource) needs no override, and no
   // existing call site is affected by this method existing.
   virtual uint32_t numDegradedLastCall() const {return 0;}
+  // The robot's current pose in the SAME frame getHumans() must return human positions in -
+  // i.e. whatever frame WorldState.robot is populated from (map frame, in this project's own
+  // buildWorldState()). Non-pure, empty default: a real sensor-based source (TrackedHumanSource)
+  // already reports positions relative to the robot's own localized frame and needs no
+  // conversion. GroundTruthHumanSource overrides this - it's the one source that reads a
+  // privileged Gazebo world-frame ground truth (a "cheat" channel that doesn't exist for a real
+  // sensor), and world frame is NOT the same frame as WorldState.robot's map-frame pose; see
+  // docs/audit.md S1.3 for the bug this fixes and why no existing test could have caught it.
+  virtual void setRobotMapPose(double /*x*/, double /*y*/) {}
   virtual ~HumanStateSource() = default;
 };
 

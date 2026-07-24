@@ -24,6 +24,11 @@ void GroundTruthHumanSource::setRobotPose(double x, double y, double theta)
   robot_pose_ = std::make_tuple(x, y, theta);
 }
 
+void GroundTruthHumanSource::setRobotMapPose(double x, double y)
+{
+  robot_map_pose_ = std::make_pair(x, y);
+}
+
 uint64_t GroundTruthHumanSource::deriveSubstreamSeed(uint64_t scenario_seed, uint32_t subsystem_tag)
 {
   std::seed_seq seq{
@@ -157,6 +162,31 @@ std::vector<HumanObservation> GroundTruthHumanSource::getHumans(const rclcpp::Ti
       result.push_back(obs.value());
     }
   }
+
+  // World-to-map frame correction (docs/audit.md S1.3): everything stored in history_ is in
+  // Gazebo WORLD frame (raw.x/y as ingested from /pedestrians, itself world frame - see the
+  // audit for the full trace). WorldState.robot is populated from Nav2's own pose argument,
+  // which is MAP frame. These are NOT the same frame in general - confirmed by live measurement
+  // to differ by a real, non-negligible offset for this project's scenarios - so returning raw
+  // world-frame positions here silently fed the policy and the OOD PROXIMITY check a wrong
+  // relative robot-human vector for as long as this class has existed. Correct by translating
+  // every returned position by (current map pose - current world pose): the one offset that
+  // makes "distance from state.robot" (map frame) and "this human's position" (now also map
+  // frame) consistent. Passes through unchanged only if setRobotMapPose() was never called
+  // (should not happen via the real controller, which always has a valid map-frame pose before
+  // computeVelocityCommands() runs) or if world pose isn't known yet (same "not available yet"
+  // window setRobotPose()/onRobotPose() already have) - neither silently invents a wrong number.
+  if (robot_map_pose_.has_value() && robot_pose_.has_value()) {
+    const auto & [rmx, rmy] = robot_map_pose_.value();
+    const auto & [rwx, rwy, _] = robot_pose_.value();
+    const double offset_x = rmx - rwx;
+    const double offset_y = rmy - rwy;
+    for (auto & h : result) {
+      h.x += offset_x;
+      h.y += offset_y;
+    }
+  }
+
   // Snapshot-and-reset (S4.8.5): whatever degrade() accumulated since the previous getHumans()
   // call becomes this call's reported figure, then the accumulator starts fresh for the next one.
   last_reported_dropped_ = dropped_since_query_;

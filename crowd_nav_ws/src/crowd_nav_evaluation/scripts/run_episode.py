@@ -179,6 +179,12 @@ def run(episode, log_dir):
         f"perception_dropout_prob:={episode['dropout_prob']}",
         f"perception_degradation_seed:={episode['seed']}",
     ]
+    # OOD-reachability demonstrations only (docs/audit.md S1.1, scenarios.py's
+    # iter_ood_reachability_episodes) - an optional field, absent from all 139 core/sweep/keepout
+    # episodes, so this can't change anything about the already-run matrix.
+    if 'debug_inject_decision_delay_s' in episode:
+        delay = episode['debug_inject_decision_delay_s']
+        amcl_cmd.append(f"debug_inject_decision_delay_s:={delay}")
     amcl_log_path = os.path.join(log_dir, 'amcl.log')
     amcl_proc, amcl_log = _start(amcl_cmd, amcl_log_path)
 
@@ -189,6 +195,8 @@ def run(episode, log_dir):
         f"seed:={episode['seed']}",
         f"world_name:={scenario['world_name']}",
     ]
+    if 'ped_max_speed' in episode:
+        ped_cmd.append(f"max_speed:={episode['ped_max_speed']}")
     ped_log_path = os.path.join(log_dir, 'pedestrians.log')
     ped_proc, ped_log = _start(ped_cmd, ped_log_path)
 

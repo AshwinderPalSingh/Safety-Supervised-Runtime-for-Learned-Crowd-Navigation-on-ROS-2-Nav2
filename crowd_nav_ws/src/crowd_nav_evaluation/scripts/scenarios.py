@@ -166,3 +166,61 @@ def iter_keepout_block_episodes():
             "dropout_prob": 0.0,
             "zone": scenario["zone"],
         }
+
+
+def iter_ood_reachability_episodes():
+    """docs/audit.md S1.1: CROWD_SIZE, RELATIVE_SPEED, and INFERENCE_TIMEOUT never fired across
+    the entire 139-episode core/sweep/keepout matrix - three of the eight enumerated OOD trigger
+    causes were silent zeros, and for the first two, structurally so: no scenario in this suite
+    ever configures more than 4 pedestrians (max_train_humans=5) or a pedestrian speed above
+    1.0 m/s (max_train_speed_mps=1.5). Rather than retune those thresholds to match what this
+    project's scenarios happen to do (which would be tuning the measuring stick to the
+    measurement), these are three named, permanent, single-run demonstrations - the same
+    pattern KEEPOUT_BLOCK_SCENARIO already established for exactly this purpose (S4.9.3): not
+    part of the N=8 statistical matrix, but a decisive proof-of-reachability and a permanent
+    regression test in one artifact. policy_supervised only - baseline_mppi/policy_raw run with
+    supervisor_enabled=false, so no OOD criterion could ever fire for them regardless of scene.
+    COMMAND_LIMIT is not demonstrated here: docs/audit.md S1.1 already proves it mathematically
+    unreachable by construction (max candidate speed exactly equals, never exceeds, the
+    threshold) - firing it would require overriding the real production config values, which
+    would demonstrate a different, artificial system, not this one."""
+    base = CORE_SCENARIOS["open_arena"]
+
+    crowd_size_scenario = dict(base, num_pedestrians=6)  # exceeds max_train_humans=5
+    yield {
+        "episode_id": "ood_demo_crowd_size",
+        "scenario_name": "ood_demo_crowd_size",
+        "scenario": crowd_size_scenario,
+        "config_name": "policy_supervised",
+        "config": CONFIGS["policy_supervised"],
+        "pedestrian_mode": "reactive",
+        "seed": 0,
+        "dropout_prob": 0.0,
+        "zone": None,
+    }
+
+    yield {
+        "episode_id": "ood_demo_relative_speed",
+        "scenario_name": "ood_demo_relative_speed",
+        "scenario": base,
+        "config_name": "policy_supervised",
+        "config": CONFIGS["policy_supervised"],
+        "pedestrian_mode": "reactive",
+        "seed": 0,
+        "dropout_prob": 0.0,
+        "zone": None,
+        "ped_max_speed": 2.0,  # exceeds max_train_speed_mps=1.5
+    }
+
+    yield {
+        "episode_id": "ood_demo_inference_timeout",
+        "scenario_name": "ood_demo_inference_timeout",
+        "scenario": base,
+        "config_name": "policy_supervised",
+        "config": CONFIGS["policy_supervised"],
+        "pedestrian_mode": "reactive",
+        "seed": 0,
+        "dropout_prob": 0.0,
+        "zone": None,
+        "debug_inject_decision_delay_s": 0.5,  # exceeds watchdog_window_s=0.03
+    }

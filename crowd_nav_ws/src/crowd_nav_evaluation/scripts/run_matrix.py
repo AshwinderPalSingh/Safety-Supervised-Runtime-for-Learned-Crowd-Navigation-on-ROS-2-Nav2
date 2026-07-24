@@ -135,7 +135,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--results-dir', required=True)
     parser.add_argument(
-        '--phase', choices=['pilot', 'core', 'sweep', 'keepout', 'all'], default='pilot')
+        '--phase', choices=['pilot', 'core', 'sweep', 'keepout', 'ood_reachability', 'all'],
+        default='pilot')
     parser.add_argument('--timeout-s', type=float, default=180.0)
     args = parser.parse_args()
 
@@ -162,10 +163,13 @@ def main():
             episodes = list(scn.iter_noise_sweep_episodes())
         elif args.phase == 'keepout':
             episodes = list(scn.iter_keepout_block_episodes())
+        elif args.phase == 'ood_reachability':
+            episodes = list(scn.iter_ood_reachability_episodes())
         else:
             episodes = (
                 list(scn.iter_core_episodes()) + list(scn.iter_noise_sweep_episodes()) +
-                list(scn.iter_keepout_block_episodes()))
+                list(scn.iter_keepout_block_episodes()) +
+                list(scn.iter_ood_reachability_episodes()))
 
         print(f"Running {len(episodes)} episodes (phase={args.phase})...", file=sys.stderr)
         run_batch(episodes, args.results_dir, args.timeout_s, ewriter, iwriter, ef, intf)

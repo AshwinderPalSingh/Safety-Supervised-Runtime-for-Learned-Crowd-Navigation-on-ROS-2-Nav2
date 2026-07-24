@@ -16,9 +16,14 @@ CAUSE_NAMES = [
     'COSTMAP_COLLISION', 'KEEPOUT_VIOLATION', 'INFERENCE_TIMEOUT',
 ]
 
+# Named, single-run demonstration/regression episodes (depot_keepout_block, S4.9.3; ood_demo_*,
+# docs/audit.md S1.1) excluded from every statistical plot below - real data, but N=1 each, not
+# part of the N=8 core matrix or the noise sweep.
+NON_STATISTICAL_PREFIXES = ('pilot_', 'noise_sweep_', 'depot_keepout_block', 'ood_demo_')
+
 
 def plot_outcome_rates(df, out_dir):
-    core = df[~df['episode_id'].str.startswith(('pilot_', 'noise_sweep_', 'depot_keepout_block'))]
+    core = df[~df['episode_id'].str.startswith(NON_STATISTICAL_PREFIXES)]
     if core.empty:
         return
     grouped = core.groupby(['scenario_name', 'config_name'])['outcome'].value_counts(
@@ -35,7 +40,7 @@ def plot_outcome_rates(df, out_dir):
 
 
 def plot_efficiency_distributions(df, out_dir):
-    core = df[~df['episode_id'].str.startswith(('pilot_', 'noise_sweep_', 'depot_keepout_block'))]
+    core = df[~df['episode_id'].str.startswith(NON_STATISTICAL_PREFIXES)]
     core = core[core['outcome'] == 'success']
     if core.empty:
         return
@@ -58,7 +63,7 @@ def plot_efficiency_distributions(df, out_dir):
 def plot_intervention_rate_by_family(df, out_dir):
     """The headline number (S4.9.4): intervention rate broken down by cause, compared across
     scenario families - not a footnote to the success/collision table."""
-    core = df[~df['episode_id'].str.startswith(('pilot_', 'noise_sweep_', 'depot_keepout_block'))]
+    core = df[~df['episode_id'].str.startswith(NON_STATISTICAL_PREFIXES)]
     core = core[core['config_name'] == 'policy_supervised']
     if core.empty:
         return
