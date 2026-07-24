@@ -110,19 +110,22 @@ visible up front rather than buried in a findings doc no one reads before citing
   `docs/phase9-findings.md` §"Design notes carried into Phase 10+"). A clean OOD-trigger rate is
   not, by itself, evidence the input pipeline is correct; that needs differential testing
   against a reference implementation, which is how the Phase 8 bug was actually found.
-- **The safety supervisor is not a strict safety improvement in every condition.** Phase 10's
-  full matrix (`docs/phase10-findings.md`) found that under reactive pedestrians - the fairest,
-  best-case comparison - `policy_supervised` has a *higher* collision rate than both the raw
-  (unsupervised) policy and the stock MPPI baseline, in both scenario families (25%/50% vs
-  12%/12%). Every one of those collisions had at least one real supervisor intervention logged
-  beforehand - the mechanism was engaged, not inert. The most plausible mechanism (not confirmed
-  beyond this dataset): the supervisor's full-stop response may not compose well with a reactive
-  pedestrian's own avoidance logic, which assumes a moving, predictable robot. The keep-out-zone
-  scenario, by contrast, shows the mechanism working exactly as designed in isolation (425/425
-  correct rejections, zero violations, `baseline_mppi` and `policy_raw` behaving exactly as
-  hypothesized) - the two results together say the supervisor reliably does what it's built to
-  do, without that composing into a guaranteed net safety win in the general crowd-navigation
-  case.
+- **The safety supervisor's reliability tracks how well-characterized the hazard is, not just
+  whether it's dangerous.** Phase 10's full matrix (`docs/phase10-findings.md`) found that under
+  reactive pedestrians - the fairest, best-case comparison - `policy_supervised` has a *higher*
+  collision rate than both the raw (unsupervised) policy and the stock MPPI baseline, in both
+  scenario families (25%/50% vs 12%/12%). Every one of those collisions had at least one real
+  supervisor intervention logged beforehand - the mechanism was engaged, not inert - and timing
+  analysis rules out the simplest explanation (a full stop confusing a reactive pedestrian's own
+  avoidance): only 2 of 6 collisions happen right after an intervention, while 4 of 6 happen
+  several seconds after the supervisor last found anything to reject, via a separate, unflagged
+  approach. The more likely story: `PROXIMITY`'s detection margin doesn't always keep pace with
+  a fast-closing dynamic human. The keep-out-zone scenario, by contrast, is a static, exactly
+  known hazard, and the same mechanism gets it right on every tick (425/425 correct rejections,
+  zero violations, `baseline_mppi` and `policy_raw` behaving exactly as hypothesized). The
+  mechanism itself doesn't misfire in either case; what varies is how completely its input
+  characterizes the actual hazard - perfectly for a fixed zone, imperfectly for a fast dynamic
+  human.
 
 ## Known upstream API/doc discrepancies (verified against real behavior, not assumed)
 

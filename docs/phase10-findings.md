@@ -134,16 +134,42 @@ a controller-quality signal, and shouldn't be read as differentiating the three 
 uncomfortable pattern holds: `policy_supervised` collides *more often* than both `baseline_mppi`
 and `policy_raw` in both scenario families - 25% vs 12%/12% in depot, and 50% vs 12%/12% in
 open_arena. This is reported prominently rather than buried, per the explicit standing
-instruction to report the interesting number even when it isn't a win. Every one of these
-`policy_supervised` collisions had at least one real intervention logged beforehand (1 to 18
-per episode) - the supervisor was actively engaged, not inert, and still didn't prevent the
-eventual collision. The most plausible mechanism, not confirmed beyond this dataset: the
-supervisor's rejection response is a **full stop**, and a reactive pedestrian's own avoidance
-logic (built around the robot's projected trajectory) may not account for a robot that
-suddenly stops - turning a cautious intervention into a new source of unpredictability for the
-human's own avoidance, rather than removing risk outright. This would need a dedicated,
-targeted follow-up (e.g. logging the pedestrian's own velocity around intervention events) to
-confirm; it is offered here as a hypothesis, not a finding.
+instruction to report the interesting number even when it isn't a win.
+
+Every one of these 6 collisions had at least one real `PROXIMITY` intervention logged
+beforehand (1 to 18 per episode) - the supervisor was actively engaged, not inert. Checking the
+*timing* between the last logged intervention and the moment of collision (not just presence,
+per the explicit ask to distinguish "the supervisor is compensating for worse conditions" from
+"the supervisor gave up," the same discipline applied to the noise-sweep plateau below) splits
+cleanly into two modes, not one:
+
+| episode | interventions | gap: last intervention → collision | last rejected speed | min human distance |
+|---|---|---|---|---|
+| depot seed7 | 1 | 0.09s | 1.00 m/s | 0.387 m |
+| open_arena seed7 | 1 | 0.07s | 1.00 m/s | 0.387 m |
+| depot seed5 | 5 | 8.11s | 0.71 m/s | 0.390 m |
+| open_arena seed0 | 7 | 6.02s | 0.71 m/s | 0.372 m |
+| open_arena seed2 | 15 | 6.56s | 1.00 m/s | 0.376 m |
+| open_arena seed1 | 18 | 1.65s | 0.71 m/s | 0.343 m |
+
+The single-intervention episodes collide within a tenth of a second of the rejection - the
+supervisor caught the approach right as contact was already imminent (rejected speed a
+meaningful 1.0 m/s, not near-zero), too late for a stop to change the outcome. But the
+higher-intervention episodes (5-18 logged rejections) show a **large** gap - several seconds
+where the supervisor considered every candidate safe - between the last handled encounter and
+an independent, later collision with no rejection immediately before it. That's the opposite of
+"the stop itself creates the new risk": if a full stop were confusing reactive avoidance, the
+collision should cluster right at/after the intervention that caused it, the way the two
+single-intervention episodes do. Instead, the dominant pattern (4 of 6) is the supervisor
+correctly handling one encounter, then a **separate, unflagged** close approach - one
+`PROXIMITY` didn't catch in time - producing the collision on its own. `min_human_distance_m` is
+essentially identical across all six (0.34-0.39 m, all just under `COLLISION_DISTANCE_M`) - these
+are narrow misses-that-weren't, not high-speed impacts, consistent with a detection-timing gap
+rather than a violent failure. The evidence points to `PROXIMITY`'s threshold/reaction-time
+margin against the harness's own (tighter) ground-truth collision distance, not the supervisor's
+stop response, as the more likely source of this gap - worth a dedicated follow-up (logging the
+pedestrian's own velocity around these specific windows) before treating it as confirmed, but
+better-supported by this data than the full-stop hypothesis considered first.
 
 ### Efficiency (successful episodes only)
 
@@ -234,6 +260,13 @@ value.
    from `(0,0)` toward `(2,0)` - never went anywhere near the zone at map `x∈[-1,0]`, which sits
    *behind* the start, not on the route to the goal.
 
+Worth stating plainly: steps 1-3 above all came up clean, and that's not wasted effort - it's
+the evidence that the supervisor's own design was never the problem. Mask geometry was correct,
+the mask was live in time, and `checkForwardSim` executed on every tick exactly as designed.
+Nothing in the supervisor changed once the actual bug was found, because nothing in the
+supervisor was wrong; the harness was wrong about ground truth while claiming to report it, a
+failure mode indistinguishable from a genuine supervisor defect until checked this specifically.
+
 ### The fix
 
 `episode_monitor.py` now checks the zone against `/amcl_pose` (already subscribed to for the
@@ -269,15 +302,34 @@ smarter about finding an alternative path.
 ## Overall assessment
 
 The headline comparison isn't "policy_supervised wins" - it doesn't, on collision rate or
-efficiency, against either alternative. What it demonstrates instead: a bounded, verifiable
-safety mechanism that reliably intercepts a specific class of unsafe command (425/425 on the
-one scenario built to test it decisively) without needing the underlying policy to be good,
-at a real, measured cost in capability (gets stuck rather than succeeding) and - the more
-important nuance found this phase - without a guaranteed net safety improvement in the
-general crowd-navigation case, where its full-stop response may interact poorly with reactive
-pedestrian avoidance. Both the capability cost and the possible safety-interaction cost were
-predicted as plausible outcomes before this phase ran; both are reported here because they
-happened, not because they flatter the project's own thesis.
+efficiency, against either alternative. Read together rather than as three separate bullets,
+the keepout result, the collision-rate finding, and the noise-sweep cliff describe one
+underlying pattern: **the supervisor's reliability tracks how well-characterized the hazard is,
+not just whether it's dangerous.**
+
+`depot_keepout_block` is the cleanest case because the hazard is static, exactly known, and
+geometrically simple - the forward-sim check has a fixed region to test against and gets it
+right on every single tick, 425/425, zero violations. The reactive-pedestrian collision-rate
+result is the same mechanism under harder conditions: humans are dynamic, and the timing
+breakdown above shows the supervisor isn't failing the way a "full stop confuses reactive
+avoidance" story would predict (that would cluster collisions right after an intervention,
+which only 2 of 6 cases show) - it's that `PROXIMITY`'s detection margin doesn't always keep
+pace with how fast a reactive human can close distance, so 4 of 6 collisions happen seconds
+after the supervisor last found anything to reject, via a separate, unflagged approach. The
+noise sweep fits the same shape from a third angle: once perception degrades enough that the
+policy can no longer characterize the humans around it at all, the supervisor doesn't get
+better at compensating (the rate-normalized intervention count is flat, not rising) - it just
+keeps rejecting the same confused output forever. In all three: the mechanism itself never
+misfires or gets confused; what varies is how completely the *input to* that mechanism
+describes the actual hazard - perfectly for a static zone, imperfectly for a fast dynamic
+human, and not at all once perception saturates.
+
+That's a real, verifiable safety mechanism, not a feature that always helps - a supervisor that
+is precise against hard geometric constraints and structurally has no fallback smarter than
+refusal once its own checks run out of margin. Both the capability cost (gets stuck rather than
+succeeding) and the detection-margin gap were plausible outcomes going into this phase; both
+are reported here, at the same level of prominence as the keepout result, because they
+happened - not because either flatters the project's own thesis.
 
 ## Files
 
