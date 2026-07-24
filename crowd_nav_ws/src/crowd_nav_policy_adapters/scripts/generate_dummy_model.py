@@ -39,7 +39,8 @@ class TrivialValueNet(nn.Module):
 
 def main():
     here = Path(__file__).resolve().parent.parent
-    config_path = Path(sys.argv[1]) if len(sys.argv) > 1 else here / "config" / "policy_adapter.yaml"
+    config_path = (
+        Path(sys.argv[1]) if len(sys.argv) > 1 else here / "config" / "policy_adapter.yaml")
     out_path = Path(sys.argv[2]) if len(sys.argv) > 2 else here / "models" / "dummy_policy.onnx"
 
     with open(config_path) as f:

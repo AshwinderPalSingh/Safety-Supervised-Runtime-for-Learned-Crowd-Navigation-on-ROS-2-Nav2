@@ -69,10 +69,12 @@ class ZoneManager(Node):
         # SingleThreadedExecutor (rclpy's default) this would deadlock - the executor would be
         # stuck inside the outer service callback, unable to spin the client's own response.
         cb_group = ReentrantCallbackGroup()
-        self.load_map_client = self.create_client(LoadMap, '/mask_server/load_map', callback_group=cb_group)
+        self.load_map_client = self.create_client(
+            LoadMap, '/mask_server/load_map', callback_group=cb_group)
 
         self.create_service(AddZone, 'add_zone', self._on_add_zone, callback_group=cb_group)
-        self.create_service(RemoveZone, 'remove_zone', self._on_remove_zone, callback_group=cb_group)
+        self.create_service(
+            RemoveZone, 'remove_zone', self._on_remove_zone, callback_group=cb_group)
 
     def _write_mask(self):
         """Render self.zones into the mask PGM+YAML pair, overwriting in place."""
@@ -116,7 +118,8 @@ class ZoneManager(Node):
 
     def _reload_mask_server(self):
         if not self.load_map_client.wait_for_service(timeout_sec=5.0):
-            self.get_logger().error('mask_server/load_map service not available, zone change not applied')
+            self.get_logger().error(
+                'mask_server/load_map service not available, zone change not applied')
             return False
         req = LoadMap.Request()
         # Plain absolute path, NOT a "file://" URI: LoadMap.srv's own doc comment says
@@ -152,7 +155,8 @@ class ZoneManager(Node):
             self.get_logger().error('mask_server/load_map call failed')
             return False
         if result.result != LoadMap.Response.RESULT_SUCCESS:
-            self.get_logger().error(f'mask_server rejected the reloaded mask, result={result.result}')
+            self.get_logger().error(
+                f'mask_server rejected the reloaded mask, result={result.result}')
             return False
         return True
 
@@ -180,7 +184,8 @@ class ZoneManager(Node):
         self._write_mask()
         if self._reload_mask_server():
             response.success = True
-            response.message = f'zone {request.zone_id} removed, {len(self.zones)} zone(s) remaining'
+            response.message = (
+                f'zone {request.zone_id} removed, {len(self.zones)} zone(s) remaining')
             self.get_logger().info(f'Removed zone {request.zone_id}: {removed}')
         else:
             self.zones[request.zone_id] = removed

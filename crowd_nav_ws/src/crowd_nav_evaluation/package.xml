@@ -18,6 +18,7 @@
   <exec_depend>action_msgs</exec_depend>
   <exec_depend>nav2_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>crowd_nav_bringup</exec_depend>
   <exec_depend>crowd_nav_pedestrians</exec_depend>

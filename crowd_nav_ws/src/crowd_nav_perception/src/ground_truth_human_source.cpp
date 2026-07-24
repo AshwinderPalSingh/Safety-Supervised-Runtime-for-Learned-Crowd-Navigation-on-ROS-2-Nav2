@@ -91,7 +91,8 @@ std::optional<HumanObservation> GroundTruthHumanSource::degrade(const HumanObser
     }
     if (params_.fov_half_angle_rad.has_value()) {
       const double angle_to_human = std::atan2(dy, dx) - rtheta;
-      const double normalized_angle = std::atan2(std::sin(angle_to_human), std::cos(angle_to_human));
+      const double normalized_angle = std::atan2(
+        std::sin(angle_to_human), std::cos(angle_to_human));
       if (std::abs(normalized_angle) > params_.fov_half_angle_rad.value()) {
         return std::nullopt;
       }

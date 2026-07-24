@@ -16,7 +16,8 @@ double computeImmediateReward(
   double dmin = std::numeric_limits<double>::infinity();
   bool collision = false;
   for (const auto & human : humans) {
-    const double dist = std::hypot(nav.px - human.px, nav.py - human.py) - nav.radius - human.radius;
+    const double dist =
+      std::hypot(nav.px - human.px, nav.py - human.py) - nav.radius - human.radius;
     if (dist < 0.0) {
       collision = true;
       break;

@@ -1,0 +1,81 @@
+name: Nightly Gazebo smoke test
+
+# IMPLEMENTATION_PLAN.md S3/S6, Phase 11: launches the FULL stack (Gazebo + Nav2 + one
+# pedestrian) and drives one goal to completion in the open-arena world. Deliberately NOT a
+# per-PR gate (see ci.yml's own header comment for why full sim-in-CI stays separate) - this is
+# a smoke test for launch-file/parameter-schema rot and, per the specific requirement pinned
+# after Phase 10's own experience, for a topic that's still "publishing" in the sense that
+# nothing crashes while its actual messages have silently stopped.
+#
+# That requirement exists because of a real bug, not a hypothetical one: Phase 10 found that
+# /ground_truth/robot_pose had been silently dead since Phase 4 (a Gazebo PosePublisher plugin
+# that never actually published on this project's gz-sim version) - the stack launched cleanly,
+# Nav2 reached its goal, and nothing in a "did it run to completion" check would ever have
+# caught it. It went undiagnosed for three phases, including one (Phase 9) that reported a
+# feature (the FOV filter) as verified specifically BECAUSE it depended on that same dead topic.
+# A handful of "topic X published at least N messages" assertions - exactly what this workflow
+# does below - would have caught it in a day. This job checks four such topics, not just
+# /ground_truth/robot_pose specifically, since the same failure mode (launches fine, silently
+# dead) is equally possible for any of them: perception ground truth, pedestrian simulation,
+# LiDAR, and localization.
+#
+# NOTE: written before this repo had a remote configured, so this workflow has not yet been
+# exercised against live GitHub Actions infrastructure. The episode invocation and the topic-
+# count assertions were both verified locally first (a real single-episode run, not a
+# hypothetical one - see docs/phase11-findings.md if present, or the Phase 11 commit) before
+# being wired into this file, per this project's own "verify against real behavior" discipline -
+# but the runner-provisioning steps (Gazebo install, headless rendering) are the one part of
+# this file that's a best-effort, standard configuration rather than something run end to end on
+# GitHub's own infrastructure yet.
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # 09:00 UTC daily
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+
+      - name: Install Gazebo (Fortress) and headless rendering deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ros-humble-ros-gz ros-humble-nav2-bringup \
+            ros-humble-ros2-control ros-humble-ros2-controllers ros-humble-nav2-mppi-controller \
+            xvfb mesa-utils
+
+      - name: Cache vendored ONNX Runtime
+        uses: actions/cache@v4
+        with:
+          path: crowd_nav_ws/build/crowd_nav_onnxruntime_vendor/onnxruntime_download
+          key: onnxruntime-1.20.1-${{ runner.os }}
+
+      - name: rosdep install
+        run: |
+          sudo rosdep init || true
+          rosdep update
+          rosdep install --from-paths crowd_nav_ws/src --ignore-src -r -y
+
+      - name: Build workspace
+        run: |
+          source /opt/ros/humble/setup.bash
+          cd crowd_nav_ws
+          colcon build --symlink-install
+
+      # gz-sim's rendering system needs a GL context even headless (IMPLEMENTATION_PLAN.md S1,
+      # docs/phase1-findings.md) - Xvfb + software rendering is the cheapest of the three
+      # fallback options that finding laid out, and the one this project actually uses.
+      - name: Run one episode and assert topic liveness
+        run: |
+          source /opt/ros/humble/setup.bash
+          source crowd_nav_ws/install/setup.bash
+          export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+          export LIBGL_ALWAYS_SOFTWARE=1
+          xvfb-run -a python3 .github/scripts/run_smoke_test_episode.py

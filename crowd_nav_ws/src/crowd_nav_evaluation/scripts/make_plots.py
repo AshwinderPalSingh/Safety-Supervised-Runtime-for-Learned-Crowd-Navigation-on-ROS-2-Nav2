@@ -8,9 +8,8 @@ import os
 
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
+import matplotlib.pyplot as plt  # noqa: E402
+import pandas as pd  # noqa: E402
 
 CAUSE_NAMES = [
     'CROWD_SIZE', 'PROXIMITY', 'RELATIVE_SPEED', 'COMMAND_LIMIT', 'LOW_PERCEPTION_CONFIDENCE',
@@ -28,7 +27,7 @@ def plot_outcome_rates(df, out_dir):
     grouped.plot(kind='bar', stacked=True, ax=ax)
     ax.set_ylabel('fraction of episodes')
     ax.set_title('Episode outcome rate by scenario family x config (N=%d/cell)' %
-                  core.groupby(['scenario_name', 'config_name']).size().min())
+                 core.groupby(['scenario_name', 'config_name']).size().min())
     ax.legend(loc='upper left', bbox_to_anchor=(1.0, 1.0))
     fig.tight_layout()
     fig.savefig(os.path.join(out_dir, 'outcome_rates.png'), dpi=150)
@@ -88,12 +87,12 @@ def plot_noise_sweep(df, out_dir):
     ).reset_index()
     fig, ax1 = plt.subplots(figsize=(8, 5))
     ax1.plot(grouped['dropout_prob'], grouped['low_perception_rate'], 'o-', color='tab:red',
-              label='mean LOW_PERCEPTION_CONFIDENCE interventions/episode')
+             label='mean LOW_PERCEPTION_CONFIDENCE interventions/episode')
     ax1.set_xlabel('perception dropout_prob')
     ax1.set_ylabel('mean interventions/episode', color='tab:red')
     ax2 = ax1.twinx()
     ax2.plot(grouped['dropout_prob'], grouped['success_rate'], 's-', color='tab:blue',
-              label='success rate')
+             label='success rate')
     ax2.set_ylabel('success rate', color='tab:blue')
     fig.suptitle('Perception noise sweep (policy_supervised / open_arena / reactive)')
     fig.tight_layout()

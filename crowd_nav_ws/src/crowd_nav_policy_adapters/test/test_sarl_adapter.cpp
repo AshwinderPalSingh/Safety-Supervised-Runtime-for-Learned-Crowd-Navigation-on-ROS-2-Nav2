@@ -110,7 +110,8 @@ TEST(SarlAdapterActionMatch, MatchesReferenceOnAdversarialAndTypicalCases)
   for (size_t i = 0; i < cases.size(); ++i) {
     const auto & c = cases[i];
     SCOPED_TRACE(
-      "case " + std::to_string(i) + " (" + c.label + ", rel_gap=" + std::to_string(c.rel_gap) + ")");
+      "case " + std::to_string(i) + " (" + c.label + ", rel_gap=" +
+      std::to_string(c.rel_gap) + ")");
     if (c.label == "adversarial") {
       ++adversarial_count;
     }
@@ -156,7 +157,8 @@ TEST(SarlAdapterActionMatch, MatchesReferenceOnAdversarialAndTypicalCases)
 
     const double ref_value = outputs.data[0][ref_idx];
     const double mine_value = outputs.data[0][mine_idx];
-    const double near_tie_rel_gap = std::abs(ref_value - mine_value) / std::max(std::abs(ref_value), 1e-9);
+    const double near_tie_rel_gap =
+      std::abs(ref_value - mine_value) / std::max(std::abs(ref_value), 1e-9);
     EXPECT_LT(near_tie_rel_gap, 0.01)
       << "chosen action differs from the reference AND the two candidates' network values "
       << "aren't actually close (ref=" << ref_value << ", mine=" << mine_value

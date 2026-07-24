@@ -2,3 +2,6 @@
 # docs/phase10-findings.md), exclude the raw per-episode ROS/Gazebo launch logs (regeneratable,
 # not human-authored, ~18MB of simulation debug noise for the full matrix).
 crowd_nav_ws/src/crowd_nav_evaluation/results*/logs/
+
+__pycache__/
+*.pyc

@@ -3,6 +3,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "crowd_nav_perception/human_state_source.hpp"
 

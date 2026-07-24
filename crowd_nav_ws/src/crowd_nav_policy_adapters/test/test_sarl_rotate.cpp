@@ -69,7 +69,8 @@ TEST(SarlRotate, MatchesReferenceImplementationFixture)
     self.theta = c.self_state[8];
 
     const auto result = rotate(
-      self, c.human_state[0], c.human_state[1], c.human_state[2], c.human_state[3], c.human_state[4]);
+      self, c.human_state[0], c.human_state[1], c.human_state[2], c.human_state[3],
+      c.human_state[4]);
 
     for (size_t k = 0; k < 13; ++k) {
       EXPECT_NEAR(result[k], c.rotated[k], 1e-6) << "column index " << k;

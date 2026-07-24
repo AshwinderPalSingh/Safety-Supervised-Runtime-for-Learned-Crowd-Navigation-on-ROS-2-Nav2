@@ -3,6 +3,7 @@
 
 #include <deque>
 #include <map>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
@@ -62,7 +63,8 @@ public:
     vel_noise_dist_(0.0, params.sigma_vel_mps),
     dropout_dist_(params.dropout_prob)
   {
-    pedestrian_sub_ = node->template create_subscription<crowd_nav_pedestrians::msg::PedestrianArray>(
+    pedestrian_sub_ = node->template create_subscription<
+      crowd_nav_pedestrians::msg::PedestrianArray>(
       pedestrian_topic, 10,
       [this](const crowd_nav_pedestrians::msg::PedestrianArray::SharedPtr msg) {
         onPedestrianArray(msg);
@@ -98,7 +100,8 @@ public:
   // are thin field-extractors calling straight into these) so tests can drive this class
   // without standing up real publishers/subscriptions - the degradation/latency/RNG logic is
   // what needs coverage, not rclcpp's own message-passing.
-  void ingestPedestrian(uint32_t id, double x, double y, double vx, double vy, const rclcpp::Time & stamp);
+  void ingestPedestrian(
+    uint32_t id, double x, double y, double vx, double vy, const rclcpp::Time & stamp);
   // theta: robot's current heading (radians, world frame) - required now that the FOV check
   // (S4.8.1) needs it, unlike the range-only check this replaces which only needed position.
   void setRobotPose(double x, double y, double theta);

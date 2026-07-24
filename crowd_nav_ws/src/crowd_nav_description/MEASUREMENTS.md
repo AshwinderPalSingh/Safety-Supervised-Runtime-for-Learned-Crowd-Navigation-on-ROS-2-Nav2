@@ -61,6 +61,13 @@ measure; they're parameters this project chooses:
   accident** — combined with the already-deliberate 8 m range cap, the simulated robot now runs
   a sensor closer to a real budget 180° LiDAR than the original 360° spec. Restore to `${2*pi}`/
   `360` samples in one place if a gz-sim version without this bug is ever confirmed.
+- **`robot_collision_radius`** (`crowd_nav_description/urdf/nvis_3302ard.xacro`, 0.14 m - the
+  value used for actual collision/costmap geometry and the Phase 9 safety supervisor,
+  IMPLEMENTATION_PLAN.md §4.3/§7, distinct from `policy_radius` fed to the SARL network): not
+  in the table above, and not `[PENDING]`, because it's derived from the robot's known spec
+  footprint (190×190 mm, chassis diagonal plus a small margin) rather than an independent
+  physical unknown - re-derive it only if the actual chassis footprint measurement ever departs
+  from the 190×190 mm spec this project has been building against throughout.
 - **`max_vel_x` / velocity limits** (`crowd_nav_control/config/diff_drive_controller.yaml`):
   set to 1.0 m/s, the *policy-training-matched* regime (IMPLEMENTATION_PLAN.md §7), not the
   physical robot's real top speed. The physical Nvis on its 8.4 V/3000 mAh pack under-driving

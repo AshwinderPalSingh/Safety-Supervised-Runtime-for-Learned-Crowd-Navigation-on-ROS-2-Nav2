@@ -3,7 +3,7 @@
 
 #include <stdexcept>
 
-#include "onnxruntime_cxx_api.h"
+#include "onnxruntime_cxx_api.h"  // NOLINT(build/include_subdir)
 
 #include "crowd_nav_policy_adapters/policy_adapter.hpp"
 

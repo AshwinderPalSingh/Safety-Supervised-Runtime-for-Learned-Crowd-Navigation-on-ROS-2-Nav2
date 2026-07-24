@@ -72,7 +72,8 @@ def main():
             if self.with_global_state:
                 global_state = torch.mean(mlp1_output.view(size[0], size[1], -1), 1, keepdim=True)
                 global_state = global_state.expand(
-                    (size[0], size[1], self.global_state_dim)).contiguous().view(-1, self.global_state_dim)
+                    (size[0], size[1], self.global_state_dim)
+                ).contiguous().view(-1, self.global_state_dim)
                 attention_input = torch.cat([mlp1_output, global_state], dim=1)
             else:
                 attention_input = mlp1_output
@@ -94,7 +95,8 @@ def main():
             0.3, rng.uniform(-3, 3), rng.uniform(-3, 3), 1.0, 0.0)
         humans = [
             ObservableState(
-                rng.uniform(-3, 3), rng.uniform(-3, 3), rng.uniform(-1, 1), rng.uniform(-1, 1), 0.3)
+                rng.uniform(-3, 3), rng.uniform(-3, 3), rng.uniform(-1, 1), rng.uniform(-1, 1),
+                0.3)
             for _ in range(n_humans)
         ]
         return JointState(self_state, humans)

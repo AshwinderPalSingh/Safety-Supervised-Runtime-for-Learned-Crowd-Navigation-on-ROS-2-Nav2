@@ -34,8 +34,8 @@ def _start(cmd, log_path):
     return proc, log_file
 
 
-def _wait_for_marker(log_path, required_substrings, timeout_s,
-                      error_markers=('Traceback', 'RLException')):
+def _wait_for_marker(
+        log_path, required_substrings, timeout_s, error_markers=('Traceback', 'RLException')):
     """Waits for a single LOG LINE containing every one of required_substrings (not just the
     file as a whole) - amcl.launch.py runs two lifecycle managers (navigation and zones), and a
     plain whole-file substring search for "Managed nodes are active" matches whichever one

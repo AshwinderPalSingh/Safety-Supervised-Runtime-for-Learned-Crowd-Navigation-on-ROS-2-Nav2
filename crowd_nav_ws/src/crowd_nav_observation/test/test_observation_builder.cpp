@@ -92,7 +92,8 @@ std::vector<FixtureCase> loadFixture(const std::string & path)
   return cases;
 }
 
-WorldState worldStateFrom(const std::array<double, 9> & self_state, const std::array<double, 5> & human_state)
+WorldState worldStateFrom(
+  const std::array<double, 9> & self_state, const std::array<double, 5> & human_state)
 {
   WorldState state;
   state.robot.px = self_state[0];

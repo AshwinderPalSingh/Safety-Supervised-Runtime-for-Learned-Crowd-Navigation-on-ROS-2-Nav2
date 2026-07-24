@@ -135,6 +135,7 @@ def generate_launch_description():
             OnProcessExit(target_action=spawn_entity, on_exit=[joint_state_broadcaster_spawner]),
         ),
         RegisterEventHandler(
-            OnProcessExit(target_action=joint_state_broadcaster_spawner, on_exit=[diff_drive_spawner]),
+            OnProcessExit(
+                target_action=joint_state_broadcaster_spawner, on_exit=[diff_drive_spawner]),
         ),
     ])

@@ -8,7 +8,7 @@
 
 #include "nav2_core/controller.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
-#include "onnxruntime_cxx_api.h"
+#include "onnxruntime_cxx_api.h"  // NOLINT(build/include_subdir)
 #include "pluginlib/class_loader.hpp"
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include "rclcpp/parameter.hpp"

@@ -188,7 +188,8 @@ void CrowdNavController::configure(
     throw std::runtime_error("CrowdNavController: unknown adapter_type " + adapter_type);
   }
 
-  ort_env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, (plugin_name_ + "_onnx").c_str());
+  ort_env_ = std::make_unique<Ort::Env>(
+    ORT_LOGGING_LEVEL_WARNING, (plugin_name_ + "_onnx").c_str());
   Ort::SessionOptions session_options;
   ort_session_ = std::make_unique<Ort::Session>(*ort_env_, model_path.c_str(), session_options);
   validateSessionShapes(*ort_session_, adapter_->expectedShape());
@@ -438,7 +439,8 @@ geometry_msgs::msg::TwistStamped CrowdNavController::computeVelocityCommands(
       if (inputs.data.empty() || inputs.data[0].empty()) {
         return {0.0, 0.0};
       }
-      const auto outputs = runInference(*ort_session_, inputs, adapter_->expectedShape().output_names);
+      const auto outputs = runInference(
+        *ort_session_, inputs, adapter_->expectedShape().output_names);
       const Velocity2D candidate = adapter_->selectAction(outputs, state);
 
       // Phase 10 (S4.9): `policy_raw` vs `policy_supervised` in the evaluation matrix needs a

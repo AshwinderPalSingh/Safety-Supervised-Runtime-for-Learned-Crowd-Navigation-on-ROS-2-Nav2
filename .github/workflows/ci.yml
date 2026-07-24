@@ -1,0 +1,99 @@
+name: CI
+
+# Per-PR gate (IMPLEMENTATION_PLAN.md S6/Phase 11): build the workspace, compile every plugin,
+# run the full unit-test suite, and lint - deliberately NO Gazebo here (see S6 for why full
+# sim-in-CI stays a separate, non-blocking nightly tier instead of a per-PR gate: expensive,
+# flaky on headless GPU/rendering, and not where this project's correctness bugs actually live -
+# the observation builder, schema adapters, supervisor geometry, and degradation model are pure
+# computation with no simulation dependency, and that's what unit tests already cover).
+#
+# NOTE: written before this repo had a remote configured, so this has not yet been exercised
+# against live GitHub Actions infrastructure - flagged here rather than asserted as verified,
+# per this project's own "verify against real behavior, don't assume" discipline. The build/test
+# steps mirror exactly what `colcon build && colcon test` already does successfully in local
+# development (60/60 tests passing as of Phase 11); the lint step's zero-violation baseline was
+# confirmed locally with the same ament_lint tools this workflow calls.
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+
+      # crowd_nav_onnxruntime_vendor downloads a ~100MB prebuilt release from GitHub's own
+      # release CDN at CMake-configure time (see its CMakeLists.txt) rather than vendoring the
+      # binary in-repo. CMake's file(DOWNLOAD ...) call is itself conditioned on the extracted
+      # .so already existing, so restoring this directory from cache skips the download/extract
+      # entirely on a cache hit - keyed on the pinned version so bumping it (a one-line change
+      # in that CMakeLists.txt) naturally invalidates the cache too.
+      - name: Cache vendored ONNX Runtime
+        uses: actions/cache@v4
+        with:
+          path: ros_ws/build/crowd_nav_onnxruntime_vendor/onnxruntime_download
+          key: onnxruntime-1.20.1-${{ runner.os }}
+
+      - uses: ros-tooling/action-ros-ci@v0.3
+        with:
+          target-ros2-distro: humble
+          package-name: |
+            crowd_nav_description
+            crowd_nav_control
+            crowd_nav_gazebo
+            crowd_nav_onnxruntime_vendor
+            crowd_nav_perception
+            crowd_nav_observation
+            crowd_nav_policy_adapters
+            crowd_nav_safety_supervisor
+            crowd_nav_controller
+            crowd_nav_zones
+            crowd_nav_pedestrians
+            crowd_nav_evaluation
+            crowd_nav_bringup
+
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+
+      - name: Install ament lint tools
+        run: sudo apt-get update && sudo apt-get install -y ros-humble-ament-lint
+
+      # legal/copyright excluded deliberately, not overlooked: this project doesn't add
+      # per-file copyright-header boilerplate (a stylistic convention, not a code-quality one),
+      # matching its own no-boilerplate-comments discipline throughout. Every other cpplint
+      # category is enforced. Zero violations confirmed locally before this gate went in -
+      # see Phase 11 in IMPLEMENTATION_PLAN.md/docs/ for the cleanup that got it there.
+      - name: cpplint
+        run: |
+          source /opt/ros/humble/setup.bash
+          ament_cpplint --filters=-legal/copyright \
+            $(find crowd_nav_ws/src -type d \( -name src -o -name include -o -name test \))
+
+      - name: flake8
+        run: |
+          source /opt/ros/humble/setup.bash
+          find crowd_nav_ws/src -name "*.py" | xargs ament_flake8
+
+      - name: xmllint (package.xml)
+        run: |
+          source /opt/ros/humble/setup.bash
+          ament_xmllint $(find crowd_nav_ws/src -name package.xml)
+
+      - name: lint_cmake
+        run: |
+          source /opt/ros/humble/setup.bash
+          ament_lint_cmake $(find crowd_nav_ws/src -name CMakeLists.txt)

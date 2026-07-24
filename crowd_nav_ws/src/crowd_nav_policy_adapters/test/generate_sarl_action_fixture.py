@@ -54,7 +54,8 @@ def main():
             0.3, rng.uniform(-3, 3) + 4.0, rng.uniform(-3, 3) + 4.0, 1.0, 0.0)
         humans = [
             ObservableState(
-                rng.uniform(-3, 3), rng.uniform(-3, 3), rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5), 0.3)
+                rng.uniform(-3, 3), rng.uniform(-3, 3),
+                rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5), 0.3)
             for _ in range(n_humans)
         ]
         return self_state, humans
@@ -96,6 +97,7 @@ def main():
 
     out_path = Path(__file__).resolve().parent / "fixtures" / "sarl_action_reference.txt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
+
     def f64(x):
         # Plain Python float repr, not numpy's "np.float64(...)" repr (rng.uniform() and
         # anything derived from it are numpy scalars) - the C++ reader is a simple

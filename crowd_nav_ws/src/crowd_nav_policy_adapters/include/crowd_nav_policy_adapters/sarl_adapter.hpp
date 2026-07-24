@@ -1,6 +1,7 @@
 #ifndef CROWD_NAV_POLICY_ADAPTERS__SARL_ADAPTER_HPP_
 #define CROWD_NAV_POLICY_ADAPTERS__SARL_ADAPTER_HPP_
 
+#include <string>
 #include <vector>
 
 #include "crowd_nav_policy_adapters/candidate_action_space.hpp"

@@ -1,9 +1,12 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.20 (2026-07-21, updated 2026-07-24) — Phase 10 closed
+## Implementation Plan v1.21 (2026-07-21, updated 2026-07-24) — Phase 11 closed, project complete
 
 This document is the living plan for the project, updated as each phase lands rather than
-frozen at the start. Phases 0–10 are done as of this revision (§3 has current status per
-phase); everything from Phase 11 onward is still plan, not implementation.
+frozen at the start. Phases 0–11 are done as of this revision (§3 has current status per
+phase). Phase 12 (HEIGHT integration) is explicitly scoped follow-on work, not part of this
+project's remaining backlog - see §3's Phase 12 entry and the README's Future Work section for
+the reasoning (an unverified checkpoint and a genuinely different observation shape make it its
+own investigation, decided deliberately rather than left to drift).
 
 **v1.1 changes** (post-review, same day): inserted a synthetic-adapter phase before SARL to
 decouple runtime-plumbing risk from SARL-search-correctness risk (§3, new Phase 6); confirmed
@@ -376,6 +379,13 @@ in full per the standing "report it even if my method didn't win" instruction, a
 `depot_keepout_block` result that shows the supervisor's mechanism does work exactly as
 designed (425/425 correct rejections, zero violations) even while the collision-rate result
 shows it isn't a strict safety improvement in every condition.
+
+**v1.21 changes (2026-07-24)**: Phase 11 implemented and closed - CI (per-PR build/test/lint
+gate, nightly Gazebo smoke test with topic-liveness assertions), README rewritten to lead with
+results, `PolicyAdapter` extension path stated concretely, Future Work names HEIGHT explicitly.
+Full detail in §3's Phase 11 entry. Project is now complete at 11 of 12 originally-planned
+phases, with Phase 12 (HEIGHT integration) decided explicitly as out of scope rather than left
+ambiguous - see the Phase 12 entry below and the README's Future Work section for why.
 
 ---
 
@@ -1215,30 +1225,72 @@ built (same topic, same dependency). Fixed via a `scene_broadcaster`/`TFMessage`
 replacement (`robot_pose_extractor.py`), confirmed to fix both the harness's own metrics and
 (as a side effect, same topic) the FOV filter.
 
-**Phase 11 — CI and docs**
-GitHub Actions per-PR gate: build workspace + compile plugins + run unit tests + lint (no
-Gazebo, see §6). Separate nightly/manually-triggered workflow: launch the full stack
-(Gazebo + Nav2 + one pedestrian) and drive one goal to completion in the open-arena world —
-not a correctness check, just a smoke test for launch-file and parameter-schema rot, which
-unit tests structurally can't catch and which is exactly what silently breaks in ROS 2
-workspaces over time. **Pinned before implementation, from Phase 10's own experience**: the
-smoke test must assert on the actual topics the stack depends on being live (starting with
-`/ground_truth/robot_pose` - the exact one that stopped publishing silently for three phases,
-`docs/phase10-findings.md`), not just that the launch succeeds and a goal is reached - a
-handful of "topic X published at least N messages" checks would have caught that bug in a day
-instead of three phases, since a dead topic with a passing goal is exactly the failure mode
-this tier exists to catch. README rewrite: lead with the results and the project's actual
-thesis (a bounded, verifiable safety mechanism with a real, measured capability cost and a
-derivable detection-margin limit - `docs/phase10-findings.md`'s overall assessment, not a
-sentence about installation), written for a reader who won't run it - the `docs/` findings
-chain is the evidence, the README is the argument built on it. Also: a "how to add a new
-policy" walkthrough (documented, using HEIGHT as the worked example, not implemented). Final
-MEASUREMENTS.md pass.
+**Phase 11 — CI and docs. CLOSED.**
+`.github/workflows/ci.yml`: per-PR gate, build workspace + compile every plugin + run the full
+60-test unit suite + lint (no Gazebo, see §6) via `ros-tooling/setup-ros`/`action-ros-ci`, plus
+a separate lint job (cpplint/flake8/xmllint/lint_cmake). Lint is a genuinely blocking gate, not
+informational: a pre-implementation sweep found 19 cpplint + 22 flake8 violations across the
+existing codebase (missing standard-library includes, line-length, a couple of false-positive
+third-party-header warnings suppressed via `// NOLINT`), all fixed before the gate went in, so
+it starts at zero known debt rather than red on day one.
 
-**Phase 12 — Second policy integration: HEIGHT**
+`.github/workflows/nightly-smoke-test.yml` + `.github/scripts/run_smoke_test_episode.py`:
+launches the full stack (Gazebo + Nav2 + one pedestrian, open-arena world), drives one goal via
+`crowd_nav_evaluation`'s own `run_episode.py` (reused, not a parallel launch mechanism), and -
+per the requirement pinned before implementation, from Phase 10's own experience - asserts that
+four topics the stack depends on (`/ground_truth/robot_pose`, `/pedestrians`, `/amcl_pose`,
+`/scan`) actually carried messages, not just that the launch succeeded and the goal was reached.
+Implemented by extending `episode_monitor.py`'s own existing subscriptions with message
+counters (`topic_message_counts` in its returned metrics) rather than a separate topic-checking
+mechanism - reused by the harness itself, not just CI. Verified locally, both directions, before
+being wired into the workflow: a real episode run showed all four counts populated correctly
+(1000+/100+/20+/30+ messages), and a synthetic zero-count case confirmed the assertion actually
+fires rather than being a tautology. The runner-provisioning steps (Gazebo install, headless
+rendering via Xvfb) are the one part of this file not yet exercised against live GitHub
+infrastructure, since this repo has no remote configured yet - stated plainly in both workflow
+files' own header comments rather than claimed as verified.
+
+Found and fixed, incidentally, while building the smoke test: `zone_manager_node.py` and three
+other scripts had lost their executable bit at the git level (not just the working tree - `git
+ls-files -s` showed `100644` in the tracked index), the same class of bug already found and
+fixed for two other scripts in Phase 10. `zone_manager_node.py` specifically is loaded by every
+single episode (the keepout costmap layer is always active), so this would have broken the
+nightly smoke test on its very first run had it not surfaced during local verification first.
+
+README rewrite: leads with the results and the project's actual thesis (the three
+Phase 10 findings tied together, `docs/phase10-findings.md`'s overall assessment), not
+installation instructions - written for a reader who won't run it, with the `docs/` findings
+chain as the evidence and the README as the argument built on it. Installation/dev-setup moved
+below the results/limitations/future-work sections rather than leading the file.
+
+`PolicyAdapter` extension walkthrough: states concretely what a `HeightAdapter` would need
+(a heterogeneous spatio-temporal graph `TensorBundle` in `buildInputs()`, in contrast to
+`SarlAdapter`'s per-candidate flat-vector batch; a simpler `selectAction()`, since HEIGHT
+outputs actions directly via PPO with no candidate-enumeration/argmax search needed) and what
+would not change (`CrowdNavController`'s decision core, `SafetySupervisor`, the evaluation
+harness, `WorldState`/`HumanObservation` - the one-line `adapter_type` string-switch addition is
+the only integration point) - framing the single real `PolicyAdapter` implementation as a
+defended design decision with a stated extension path, not an unfinished one. Future Work names
+HEIGHT integration explicitly as scoped follow-on work, with the checkpoint-validation risk
+(§1.8's still-unverified official checkpoint) stated plainly rather than left implicit.
+
+Final `MEASUREMENTS.md` pass: confirmed complete against the current codebase: added one
+clarifying note (`robot_collision_radius` is spec-derived, not an independent measurement
+pending, and wasn't already documented as such).
+
+**Phase 12 — Second policy integration: HEIGHT (decided explicitly: a separately-scoped future
+effort, not this project's remaining backlog)**
 This is the reusability proof `PolicyAdapter` was built for, not a replacement for the SARL
-work above. Explicitly out of scope until Phases 1–11 are done and the runtime is proven end
-to end against `SarlAdapter`. Scope: (1) actually validate `Shuijing725/CrowdNav_HEIGHT`'s
+work above. With Phases 0–11 done and the runtime proven end to end against `SarlAdapter`
+(`docs/phase10-findings.md`, `docs/phase11-findings.md` if present), this phase was
+deliberately not pulled into this project's scope: it starts with an open-ended risk (validating
+an officially-unverified checkpoint, §1.8, with no guarantee it's better than the RL-trained
+SARL checkpoint that turned out badly - `docs/phase0-findings.md`) rather than a bounded task,
+and `HeightAdapter` itself is real new work against a fundamentally different observation shape,
+not a config swap. The README's "PolicyAdapter: one real implementation, a deliberately defended
+seam" section states concretely what this phase would require and what would stay unchanged, so
+the extension path is checkable without this phase having been built. Scope, if and when it is
+picked up: (1) actually validate `Shuijing725/CrowdNav_HEIGHT`'s
 official checkpoint (Google Drive link, §1.8 — currently unverified, treat with the same
 skepticism `tkkim-robot`'s `rl_model.pth` got before it was tested) using the same kind of
 differential-testing discipline Phase 0 used for SARL — don't assume it's good just because

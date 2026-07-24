@@ -1,7 +1,10 @@
 #ifndef CROWD_NAV_POLICY_ADAPTERS__ONNX_INFERENCE_HPP_
 #define CROWD_NAV_POLICY_ADAPTERS__ONNX_INFERENCE_HPP_
 
-#include "onnxruntime_cxx_api.h"
+#include <string>
+#include <vector>
+
+#include "onnxruntime_cxx_api.h"  // NOLINT(build/include_subdir)
 
 #include "crowd_nav_policy_adapters/policy_adapter.hpp"
 
