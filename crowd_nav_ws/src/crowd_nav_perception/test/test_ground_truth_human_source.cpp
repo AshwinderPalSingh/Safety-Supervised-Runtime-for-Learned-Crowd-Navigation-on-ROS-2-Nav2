@@ -175,13 +175,82 @@ TEST(GroundTruthHumanSource, MaxRangeExcludesDistantHumans)
   params.max_range_m = 5.0;
   GroundTruthHumanSource source(params);
 
-  source.setRobotPose(0.0, 0.0);
+  source.setRobotPose(0.0, 0.0, 0.0);
   source.ingestPedestrian(1, 3.0, 0.0, 0.0, 0.0, t(0.0));   // within range
   source.ingestPedestrian(2, 10.0, 0.0, 0.0, 0.0, t(0.0));  // out of range
 
   auto humans = source.getHumans(t(0.0));
   ASSERT_EQ(humans.size(), 1u);
   EXPECT_EQ(humans[0].id, 1u);
+}
+
+// IMPLEMENTATION_PLAN.md S4.8.1 - this robot's real ~180 degree sensor (half-angle pi/2).
+TEST(GroundTruthHumanSource, FovHalfAngleExcludesHumansBehindRobot)
+{
+  DegradationParams params;
+  params.fov_half_angle_rad = M_PI_2;
+  GroundTruthHumanSource source(params);
+
+  // Robot at origin, facing +x (theta=0).
+  source.setRobotPose(0.0, 0.0, 0.0);
+  source.ingestPedestrian(1, 3.0, 0.0, 0.0, 0.0, t(0.0));    // dead ahead - in FOV
+  source.ingestPedestrian(2, 0.0, 3.0, 0.0, 0.0, t(0.0));    // directly to the left - at the
+                                                              // +/-90 deg edge, in FOV
+  source.ingestPedestrian(3, -3.0, 0.0, 0.0, 0.0, t(0.0));   // directly behind - out of FOV
+  source.ingestPedestrian(4, -3.0, 3.0, 0.0, 0.0, t(0.0));   // rear-left quadrant - out of FOV
+
+  auto humans = source.getHumans(t(0.0));
+  std::set<uint32_t> ids;
+  for (const auto & h : humans) {ids.insert(h.id);}
+  EXPECT_EQ(ids, (std::set<uint32_t>{1u, 2u}));
+}
+
+// The FOV restriction must track the robot's actual current heading, not assume facing +x -
+// otherwise this would pass by accident for the theta=0 case above alone.
+TEST(GroundTruthHumanSource, FovHalfAngleRotatesWithRobotHeading)
+{
+  DegradationParams params;
+  params.fov_half_angle_rad = M_PI_2;
+  GroundTruthHumanSource source(params);
+
+  // Robot at origin, now facing +y (theta = pi/2).
+  source.setRobotPose(0.0, 0.0, M_PI_2);
+  source.ingestPedestrian(1, 3.0, 0.0, 0.0, 0.0, t(0.0));   // was "ahead" when facing +x, now
+                                                              // at the robot's right flank - at
+                                                              // the FOV edge, still in FOV
+  source.ingestPedestrian(2, 0.0, 3.0, 0.0, 0.0, t(0.0));   // now dead ahead - in FOV
+  source.ingestPedestrian(3, 0.0, -3.0, 0.0, 0.0, t(0.0));  // now directly behind - out of FOV
+
+  auto humans = source.getHumans(t(0.0));
+  std::set<uint32_t> ids;
+  for (const auto & h : humans) {ids.insert(h.id);}
+  EXPECT_EQ(ids, (std::set<uint32_t>{1u, 2u}));
+}
+
+// IMPLEMENTATION_PLAN.md S4.8.5 - the dropout model's own count, read-and-reset each
+// getHumans() call, is what makes LOW_PERCEPTION_CONFIDENCE a real, checkable signal.
+TEST(GroundTruthHumanSource, NumDegradedLastCallCountsOnlyDropoutNotFovExclusion)
+{
+  DegradationParams params;
+  params.dropout_prob = 1.0;  // every ingestion this tick is dropped, deterministically
+  params.degradation_seed = 1;
+  params.fov_half_angle_rad = M_PI_2;
+  GroundTruthHumanSource source(params);
+
+  source.setRobotPose(0.0, 0.0, 0.0);
+  source.ingestPedestrian(1, 3.0, 0.0, 0.0, 0.0, t(0.0));   // in FOV, dropped by the model
+  source.ingestPedestrian(2, -3.0, 0.0, 0.0, 0.0, t(0.0));  // out of FOV - excluded before the
+                                                              // dropout draw even happens
+
+  source.getHumans(t(0.0));
+  // Only human 1 reached the dropout coin-flip; human 2 was excluded by FOV first and must not
+  // inflate this count (S4.8.5's explicit distinction).
+  EXPECT_EQ(source.numDegradedLastCall(), 1u);
+
+  // A second call with nothing new ingested must report zero, not the stale prior count -
+  // proves this is "since last call," not a running total.
+  source.getHumans(t(0.0));
+  EXPECT_EQ(source.numDegradedLastCall(), 0u);
 }
 
 int main(int argc, char ** argv)

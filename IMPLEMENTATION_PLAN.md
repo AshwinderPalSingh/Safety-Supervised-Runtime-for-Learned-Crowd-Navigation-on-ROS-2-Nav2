@@ -1,9 +1,9 @@
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
-## Implementation Plan v1.16 (2026-07-21, updated 2026-07-23) — Phase 8 done
+## Implementation Plan v1.18 (2026-07-21, updated 2026-07-24) — Phase 9 done
 
 This document is the living plan for the project, updated as each phase lands rather than
-frozen at the start. Phases 0–8 are done as of this revision (§3 has current status per
-phase); everything from Phase 9 onward is still plan, not implementation.
+frozen at the start. Phases 0–9 are done as of this revision (§3 has current status per
+phase); everything from Phase 10 onward is still plan, not implementation.
 
 **v1.1 changes** (post-review, same day): inserted a synthetic-adapter phase before SARL to
 decouple runtime-plumbing risk from SARL-search-correctness risk (§3, new Phase 6); confirmed
@@ -286,6 +286,59 @@ fixture to capture what `predict()` actually evaluated; this project's own `Sarl
 not yet replicate an equivalent filter matching this robot's actual sensor, a real gap flagged
 for resolution before Phase 10's evaluation numbers are treated as meaningful. Full-workspace
 rebuild plus every prior phase's test suite re-run clean (39 tests total, no regression).
+
+**v1.17 changes (2026-07-23)**: Phase 9 rescoped before implementation, per review, in three
+concrete ways plus one correction found while pinning them (§4.8 has the full detail):
+1. The FOV/range filter (Phase 8's top carry-forward finding) must be resolved in code *before*
+   any supervisor code exists, since the OOD thresholds are meaningless against a mismatched
+   input pipeline. Decided as two independent questions with different answers: this robot's
+   real ~180°/8m sensor geometry for the restriction itself (not the reference's D435I-specific
+   85.2°/12m), but the reference's dummy-injection-on-empty convention replicated regardless,
+   since it protects an architecturally-untested path in the network's attention mechanism, not
+   a training-distribution nicety.
+2. The supervisor is structurally guaranteed to share MPPI's exact costmap instance - it's
+   instantiated by `CrowdNavController` with the same `costmap_ros_` pointer already passed to
+   the embedded MPPI, not a second subscription to cross-check. "Same footprint" resolves to no
+   independent footprint at all: both rely on the same inflated costmap, where this project's
+   `robot_radius` already lives exactly once, matching MPPI's own `consider_footprint: false`
+   configuration.
+3. The forward-sim horizon and step count are fixed at implementation time (4 steps, the
+   existing `time_step_s`, no adaptive refinement) so the watchdog window covers a known
+   worst-case cost, per §1.7. The candidate's raw holonomic velocity is used as a deliberately
+   conservative (never unsafely-permissive, argued explicitly in §4.8.3) proxy for the robot's
+   real diff-drive-constrained motion, rather than re-deriving `toTwistStamped()`'s projection
+   inside the watchdog-timed closure.
+4. **Found while wiring `LOW_PERCEPTION_CONFIDENCE` to a real signal, not anticipated going
+   in**: `GroundTruthHumanSource::degrade()` currently discards a dropped-out detection with no
+   trace left in `WorldState` - there was no way to implement this trigger as originally
+   described. Fixed with a new non-pure `HumanStateSource::numDegradedLastCall()` (default 0,
+   no existing call site affected). Also corrects a v1.15 assumption that the zero-humans case
+   would route through this same trigger - it doesn't; a legitimately empty, correctly-perceived
+   scene isn't a degraded-perception event, and treating it as one would fire constantly on
+   ordinary empty scenes. A new §4.8.6 states explicitly, per review, what this detector cannot
+   catch: input-pipeline mismatches (Phase 8's own FOV-filter bug is exactly that class), as
+   opposed to world-state novelty, which is all five criteria actually characterize.
+
+**v1.18 changes (2026-07-24)**: Phase 9 implemented and closed per the v1.17 rescope - full
+trail in `docs/phase9-findings.md`. All three pinned requirements verified in the actual build
+order they demanded: the FOV/range filter and dummy-injection fix landed and were unit-tested
+(12 new tests) **before any `crowd_nav_safety_supervisor` code existed**; `SafetySupervisor` is
+instantiated directly by `CrowdNavController` with the identical `costmap_ros_` pointer already
+shared with the embedded MPPI, making "same costmap instance" structural rather than asserted;
+the forward-sim is fixed at 4 steps / 1.0s, no adaptive refinement. Live-verified in Gazebo, not
+just unit-tested: a clean baseline run (no pedestrians) reached its goal with zero intervention
+events, and with pedestrians present three of the eight causes fired for real, non-engineered
+reasons and were logged/published correctly - `CROWD_SIZE` (6 pedestrians over the configured
+limit), `PROXIMITY` (5 episodes), and a sustained `COSTMAP_COLLISION` that correctly rejected
+the same unsafe candidate on every one of 90+ consecutive ticks (~20+ seconds, zero misses,
+1,176 `/intervention_events` messages published total this session). A specific engineered
+keep-out-zone trigger wasn't cleanly isolated live this session (ad hoc zone placements either
+blocked the global planner upstream of the supervisor or left room to route around) - flagged
+honestly rather than glossed over, with a pre-measured corridor-zone test (Phase 3's own
+methodology) proposed as a Phase 10 scenario. `RELATIVE_SPEED`/`COMMAND_LIMIT`/
+`LOW_PERCEPTION_CONFIDENCE`/`INFERENCE_TIMEOUT` are unit-tested but weren't observed live this
+session either. Full-workspace rebuild plus every prior phase's test suite re-run clean (60
+tests total across 5 packages, no regression).
 
 ---
 
@@ -666,13 +719,13 @@ Everything below lives in one colcon workspace, `crowd_nav_ws/src/`.
 | `crowd_nav_description` | URDF/xacro digital twin (§3), LiDAR xacro macro, MEASUREMENTS.md | No |
 | `crowd_nav_control` | ros2_control YAML, `diff_drive_controller` config, `.ros2_control.xacro` hardware-plugin swap point | No |
 | `crowd_nav_gazebo` | World files (open-arena, tugbot_depot integration, compact depot if needed), spawn launch | No |
-| ~~`crowd_nav_msgs`~~ | **Superseded (v1.9), not built as planned** — `AddZone`/`RemoveZone` ended up defined inside `crowd_nav_zones` (Phase 3) and the ground-truth human-state message (`Pedestrian`/`PedestrianArray`) inside `crowd_nav_pedestrians` (Phase 4), colocated with their producing package rather than centralized. Standard ROS2 practice for a project this size, and it happened without the plan saying so first - correcting here rather than leaving the table wrong. `InterventionEvent` (Phase 9, not yet built) will need a home decided when that phase starts - likely `crowd_nav_safety_supervisor` itself, for the same colocation reason, unless a second consumer emerges first. | — |
+| ~~`crowd_nav_msgs`~~ | **Superseded (v1.9), not built as planned** — `AddZone`/`RemoveZone` ended up defined inside `crowd_nav_zones` (Phase 3), the ground-truth human-state message (`Pedestrian`/`PedestrianArray`) inside `crowd_nav_pedestrians` (Phase 4), and `InterventionEvent` inside `crowd_nav_safety_supervisor` (Phase 9) - each colocated with its producing package rather than centralized. Standard ROS2 practice for a project this size, and it happened without the plan saying so first - correcting here rather than leaving the table wrong. | — |
 | `crowd_nav_onnxruntime_vendor` | Minimal vendored ONNX Runtime CMake package | No |
-| `crowd_nav_perception` | **Built and closed in Phase 5.** `HumanStateSource` interface, `GroundTruthHumanSource` (+ degradation model, consuming `crowd_nav_pedestrians`' `PedestrianArray` via the message-adapter seam in §4.1), `TrackedHumanSource` stub. **Production constructor templated in Phase 8** so it works from any `nav2_core` plugin's `LifecycleNode`, not just `rclcpp::Node` (see §4.7). | No |
+| `crowd_nav_perception` | **Built and closed in Phase 5.** `HumanStateSource` interface, `GroundTruthHumanSource` (+ degradation model, consuming `crowd_nav_pedestrians`' `PedestrianArray` via the message-adapter seam in §4.1), `TrackedHumanSource` stub. **Production constructor templated in Phase 8** so it works from any `nav2_core` plugin's `LifecycleNode`, not just `rclcpp::Node` (see §4.7). **Phase 9 (§4.8.1)**: heading tracking + angular-FOV term added to the degradation model (this robot's real ~180°/8m sensor, now actually active in production, not just a capability); `numDegradedLastCall()` added to `HumanStateSource` so `LOW_PERCEPTION_CONFIDENCE` (§4.8.5) is a real, checkable signal. | No |
 | `crowd_nav_observation` | **Built and closed in Phase 5.** Observation builder library, canonical `WorldState` struct | No |
-| `crowd_nav_policy_adapters` | **`PolicyAdapter` interface, candidate action-space/propagation, shape validation, `DummyAdapter` (Phase 6), `SarlAdapter` built and closed in Phase 8, see §4.7.** Real SARL value net (`models/sarl_value_net.onnx`), production `rotate()`/`computeImmediateReward()`. | Onnxruntime only |
-| `crowd_nav_controller` | **Built and closed in Phase 7/8, see §4.6/§4.7.** `nav2_core::Controller` plugin: hold-last-action rate handling, inference-latency watchdog structured for Phase 9, failover to a genuinely embedded `nav2_mppi_controller::MPPIController` via pluginlib (not accel clamping/smoothing - `nav2_velocity_smoother` already owns that), `adapter_type` config switch (`dummy`/`sarl`), live perception via `GroundTruthHumanSource`. | Yes (nav2_core) |
-| `crowd_nav_safety_supervisor` | Forward-sim, costmap/keepout check, OOD detector, fallback trigger, intervention logging | Yes (costmap_2d) |
+| `crowd_nav_policy_adapters` | **`PolicyAdapter` interface, candidate action-space/propagation, shape validation, `DummyAdapter` (Phase 6), `SarlAdapter` built and closed in Phase 8, see §4.7.** Real SARL value net (`models/sarl_value_net.onnx`), production `rotate()`/`computeImmediateReward()`. **Phase 9 (§4.8.1)**: `SarlAdapter::buildInputs()` now injects a synthetic placeholder human on an empty perceived-human list instead of returning an empty batch, verified not to degenerate against the real network. | Onnxruntime only |
+| `crowd_nav_controller` | **Built and closed in Phase 7/8, see §4.6/§4.7.** `nav2_core::Controller` plugin: hold-last-action rate handling, inference-latency watchdog, failover to a genuinely embedded `nav2_mppi_controller::MPPIController` via pluginlib (not accel clamping/smoothing - `nav2_velocity_smoother` already owns that), `adapter_type` config switch (`dummy`/`sarl`), live perception via `GroundTruthHumanSource`. **Phase 9 (§4.8)**: instantiates `SafetySupervisor` directly (sharing its own `costmap_ros_`), calls it inside `run_policy_decision` after `selectAction()`, publishes `InterventionEvent` via a `LifecyclePublisher`. | Yes (nav2_core) |
+| `crowd_nav_safety_supervisor` | **Built and closed in Phase 9, see §4.8.** Forward-sim + costmap/keepout check, 5-criteria OOD detector, per-cause intervention logging (`InterventionEvent`). Pure C++ core (`SafetySupervisor`), no live ROS node needed for its own logic. | Yes (costmap_2d) |
 | ~~`crowd_nav_costmap_filters`~~ | **Built as `crowd_nav_zones` instead (Phase 3)** - same responsibility (zone-manager node: mask gen + reload via a real `map_server` instance + `AddZone`/`RemoveZone`, stock `KeepoutFilter`), different name chosen during implementation; correcting the table rather than leaving two names for one package. | Yes (map_server/costmap_2d) |
 | `crowd_nav_pedestrians` | **Rescoped v1.7 - HuNav dropped entirely, see §1.2.** A single deterministic seeded social-force ROS node (`reactive`/`non_reactive` as one config flag), ground-truth robot pose injected via a Gazebo `PosePublisher` plugin (not `/odom`), plus an off-by-default visual-only Gazebo actor mirror node. Built and closed in Phase 4. | No (Gazebo only, no HuNav dependency) |
 | `crowd_nav_evaluation` | Scenario suite, harness runner, metrics collector, CSV + plots | Yes (transitively) |
@@ -990,7 +1043,7 @@ before HEIGHT or ORACLE-Nav ever show up. Full trail: `docs/phase8-findings.md`.
   Kept as a permanent fixture in the test suite, not a Phase 6 throwaway — Phase 7 already found
   a real bug in it this way (`docs/phase7-findings.md`), not a hypothetical one.
 
-**Phase 9 — Safety supervisor**
+**Phase 9 — Safety supervisor (rescoped v1.17, see §4.8) — DONE, done-bar met**
 **Principle carried forward from Phase 2** (`docs/phase2-findings.md`, "don't reimplement what
 the Nav2 stack already does better"): the forward-simulation/collision-check loop below should
 reuse Nav2's own collision-checking primitives (costmap cost lookup, `nav2_costmap_2d`'s
@@ -999,7 +1052,11 @@ trajectory rollout — a hand-rolled version found real, hard-to-predict interac
 Phase 2 (mapping sweep × narrow LiDAR FOV × scan matching) that reusing the stack's own,
 already-hardened logic would have avoided. Reserve genuinely custom code for what's actually
 novel here — the OOD detector and the intervention-logging/fallback decision — not for
-re-solving "is this position in collision."
+re-solving "is this position in collision." §4.8.2/§4.8.3 land on a plain point-cost lookup
+against the shared costmap (not `FootprintCollisionChecker`'s polygon sweep), since this
+project's costmap uses a scalar `robot_radius` and MPPI's own `ObstaclesCritic` already runs
+`consider_footprint: false` against the same costmap - the point lookup is the primitive
+already shared with MPPI, not a new one invented for the supervisor alone.
 
 **Second principle carried forward, from Phase 3's §1.5 correction**: the same failure shape
 recurs whenever two components need to agree on state but only one of them actually has it.
@@ -1012,14 +1069,75 @@ controller being supervised is actually acting on — the supervisor could rejec
 commands based on a picture of the world the controller doesn't share, producing exactly the
 kind of silent disagreement Phase 3 found the hard way. Verify explicitly that the supervisor
 reads the *same* costmap (or an explicitly-justified equivalent) the controller uses, don't
-assume a second subscription to "the costmap topic" is automatically the same picture.
+assume a second subscription to "the costmap topic" is automatically the same picture. §4.8.2
+resolves this structurally: `SafetySupervisor` is instantiated by `CrowdNavController` itself
+with the same `costmap_ros_` pointer already shared with the embedded MPPI, not a second,
+independently-subscribed copy to cross-check against.
 
-Forward-simulation of commanded velocity, costmap + active-keep-out-zone check, OOD detector
-(§4.4 defines concrete criteria — see below, this needed sharpening per the brief's own
-prompt), fallback to MPPI or controlled stop, per-cause intervention logging. **Done:** an
-engineered unsafe command (e.g. one aimed straight at a keep-out zone) is demonstrably
-rejected and logged with the correct trigger reason; supervisor geometry and OOD-threshold
-unit tests green.
+**Three further requirements from review, resolved before any supervisor code (§4.8 has the
+full reasoning for each) - this is why the build order below starts with perception, not the
+supervisor package**:
+1. **The FOV/range filter must be resolved first**, not deferred to Phase 10, because the OOD
+   thresholds below are meaningless if tuned against an input pipeline that doesn't match what
+   the policy was trained on. §4.8.1: this robot's real ~180°/8m sensor geometry for the
+   restriction itself (not the reference's D435I-specific 85.2°/12m - a deliberate,
+   justified divergence, not an oversight), but the reference's dummy-injection-on-empty
+   convention *is* replicated regardless of FOV numbers chosen, since it protects an
+   architecturally-untested (not just untrained) path in the network's own attention
+   mechanism. Corrects a v1.15 assumption that the zero-humans case would route through
+   `LOW_PERCEPTION_CONFIDENCE` - it doesn't; a genuinely empty, correctly-perceived scene isn't
+   a degraded-perception event.
+2. **Supervisor and MPPI must share the same costmap instance and the same footprint
+   treatment.** §4.8.2: structural, by construction (same `costmap_ros_` pointer), not an
+   assertion to add. "Same footprint" resolves to "no independent footprint at all" - both the
+   supervisor and MPPI's `ObstaclesCritic` already rely on the same inflated costmap values,
+   which is where this project's `robot_radius` already lives exactly once.
+3. **The forward-sim's cost must be bounded by construction, not typical-case fast.** §4.8.3:
+   fixed 4 steps at the existing `time_step_s` (1.0s look-ahead total), no adaptive refinement,
+   using the candidate's raw holonomic velocity as a conservative (never unsafely-permissive,
+   per §4.8.3's argument) proxy for the robot's actual diff-drive-constrained motion, so the
+   watchdog window (§1.7) covers a known worst case.
+
+Forward-simulation of commanded velocity, costmap + active-keep-out-zone check (§4.8.3), OOD
+detector (§4.4/§4.8.5 - concrete criteria, each wired to a real, checkable signal, including a
+fix to make `LOW_PERCEPTION_CONFIDENCE` reachable at all, §4.8.5), a two-tier fallback - watchdog
+timeout still defers to the embedded MPPI unchanged from Phase 7, but a supervisor rejection is
+a direct controlled stop rather than a second call into MPPI, for the thread-safety reason
+§4.8.4 gives - and per-cause intervention logging (`InterventionEvent`, §4.8.7). **Explicitly
+out of scope for what this catches**: §4.8.6 - the OOD detector characterizes world-state
+novelty, not input-pipeline correctness; it would not, by itself, have caught Phase 8's FOV-
+filter bug, and shouldn't be read as a general guarantee against that class of error recurring
+elsewhere. Full trail: `docs/phase9-findings.md`.
+
+**Done, verified with direct measurement (docs/phase9-findings.md has the full trail):**
+- The FOV/range filter and dummy-injection fix were implemented and unit-tested (12 new tests
+  across `crowd_nav_perception`/`crowd_nav_policy_adapters`) **before any supervisor code was
+  written**, per the explicit sequencing requirement - not just described as done first, actually
+  landed first, in that order, in separate commits.
+- `SafetySupervisor` (12 unit tests) verified geometrically: each of the 5 OOD criteria
+  triggering individually plus an all-clear case; forward-sim safe/collision/`NO_INFORMATION`-
+  excluded/out-of-bounds-excluded cases; `KEEPOUT_VIOLATION` vs. generic `COSTMAP_COLLISION`
+  labeling with and without a matching secondary mask. A real, non-hypothetical test confirms
+  `LOW_PERCEPTION_CONFIDENCE` fires on a dropout and does not fire on a legitimately empty scene.
+- **Live-verified in Gazebo, not just unit-tested**: a clean baseline run (no pedestrians)
+  reached its goal with zero intervention events - no false positives. With pedestrians present,
+  three of the eight causes fired for real, non-engineered reasons and were logged/published
+  correctly: `CROWD_SIZE` (6 pedestrians exceeding the configured limit), `PROXIMITY` (5 distinct
+  episodes), and a sustained `COSTMAP_COLLISION` - the same candidate rejected on every one of
+  90+ consecutive ticks (~20+ seconds), zero misses, `sent_vx=sent_vy=0.0` every time. 1,176
+  `/intervention_events` messages published across the session. A specific engineered keep-out-
+  zone trigger wasn't cleanly isolated this session (ad hoc zone placements either blocked the
+  global planner upstream of the supervisor or left room for Nav2 to route around them) - but
+  `KeepoutFilter` writes into the identical costmap as `LETHAL_OBSTACLE` (§4.8.3), so the
+  non-engineered `COSTMAP_COLLISION` episode already exercises the exact same rejection code
+  path a corridor-blocking zone would; flagged as a good Phase 10 scenario-suite candidate for a
+  cleaner, pre-measured version of that specific test (Phase 3's own methodology).
+- `RELATIVE_SPEED`, `COMMAND_LIMIT`, `LOW_PERCEPTION_CONFIDENCE`, and `INFERENCE_TIMEOUT` are
+  unit-tested but were not observed firing live this session - honestly flagged, not glossed
+  over, as carry-forward items for Phase 10 (§4.8.6 already states the detector's own limits;
+  this is a coverage note, not a new one).
+- Full-workspace rebuild plus every prior phase's test suite re-run clean (60 tests total across
+  5 packages, no regression).
 
 **Phase 10 — Evaluation harness**
 Seeded scenario suite (open-arena × structured-depot) × (`baseline_mppi`, `policy_raw`,
@@ -1341,6 +1459,14 @@ intervention log (`CROWD_SIZE`, `PROXIMITY`, `RELATIVE_SPEED`, `COMMAND_LIMIT`,
 forward-sim check and `INFERENCE_TIMEOUT` from the watchdog). That's the full trigger
 taxonomy for the "intervention rate broken down by cause" headline metric.
 
+**Stated limit of this detector, per review (§4.8.6 has the full reasoning)**: these criteria
+characterize *world-state novelty* - a crowd, distance, or speed unlike training. None of them
+can detect an *input-pipeline* mismatch, where the observation fed to the policy was already
+wrong before any threshold got to look at it - Phase 8's FOV-filter finding (§4.7) is exactly
+that class of bug, and no amount of tuning these five thresholds would have caught it. Worth
+keeping in mind before treating a clean OOD-trigger rate as evidence the input pipeline itself
+is correct.
+
 ### 4.5 Hardware boundary (ros2_control)
 
 Today: `<hardware><plugin>gz_ros2_control/GazeboSimSystem</plugin></hardware>` in
@@ -1540,6 +1666,229 @@ rotation) equals `policy_radius_m` (0.3, the training value) and is never equal 
 `robot_collision_radius` (0.14, the URDF value) - a regression here would silently feed the
 network an out-of-distribution self-radius without any load-time error, the exact quiet-failure
 shape Phase 2 already demonstrated once.
+
+### 4.8 Safety supervisor design (added v1.17, before Phase 9 implementation)
+
+Rescoped before implementation, per review, in the three ways the review asked for. Per the
+explicit instruction, the first of these (the FOV filter) must be **resolved in code before any
+`crowd_nav_safety_supervisor` code is written** - the OOD thresholds below are meaningless if
+tuned against an input pipeline that doesn't match what the policy was trained on. The build
+order in §3's Phase 9 entry reflects this: perception fix first, supervisor second.
+
+**4.8.1 The FOV/range filter - a two-part decision, not one.** Phase 8 found that the
+checkpoint's own source repo restricts and augments the human list inside `JointState.__init__`
+before SARL ever sees it (§4.7, `docs/phase8-findings.md`): an 85.2°/12m simulated-D435I FOV
+filter, then an unconditional synthetic "dummy" human appended to whatever survives (even an
+empty list). These are two independent design questions with different answers:
+
+- **The FOV/range *numbers* themselves: use this robot's real sensor geometry (~180°, i.e.
+  ±90° half-angle from robot heading; 8m range), not the reference's 85.2°/12m.** The D435I
+  spec is an artifact of a different codebase's simulated camera, unrelated to this project's
+  robot. Copying it would trade one arbitrary mismatch (no filter at all) for a different
+  arbitrary mismatch (the wrong camera's filter) - neither matches the training distribution
+  exactly, since this robot's sensor genuinely differs from a D435I (§1's LiDAR finding: a
+  confirmed rear-hemisphere rendering artifact masked at the source, `docs/phase1-findings.md`;
+  plus the project's own already-deliberate 8m range cap, §3). Given that neither choice is
+  training-faithful, the tie-breaker is honesty about what this robot can actually perceive, not
+  numerical proximity to a constant that was never this robot's number to begin with. The
+  ~180°/8m figures are already stated as this project's real sensor spec in the README's Known
+  Limitations section - reusing them here keeps one honest story about what the robot can see,
+  instead of a second, different fictional sensor spec invented just for the policy's input.
+- **The dummy-injection-on-empty convention: replicate it, regardless of which FOV numbers are
+  used.** This one is not about matching a sensor - it's about matching an untested code path in
+  the network itself. Nothing in the reference's own evaluation ever calls `predict()` with a
+  genuinely empty human list (`env.config`'s `human_num` is fixed and non-zero, and the
+  fallback-dummy branch exists specifically because *some* list is always non-empty by
+  construction before `predict()` runs). Masked-softmax attention over zero rows is a divide-
+  by-zero in the pooling denominator - not "untrained," but architecturally undefined. Whatever
+  this project decides its own FOV/range numbers should be, an empty perceived-human list must
+  still become a one-row batch before it reaches the network, matching the *shape* of the
+  reference's own defensive convention even though the specific placement numbers (11.9m/21.9m)
+  are this reference implementation's own arbitrary choice, not a trained parameter either.
+  **This corrects an assumption in v1.15's own changelog entry above**, which expected the zero-humans case
+  to route through `LOW_PERCEPTION_CONFIDENCE`. On reflection that's wrong: a genuinely empty
+  scene (no humans anywhere nearby, or all correctly outside this robot's real FOV/range) is not
+  a degraded-perception event, it's the ordinary, expected case in an open-arena world with no
+  pedestrians nearby - flagging every such tick as low-confidence would make that OOD trigger
+  fire constantly for entirely legitimate scenes, which is worse than not having the signal at
+  all. `LOW_PERCEPTION_CONFIDENCE` stays scoped to the degradation model's own dropout event
+  (§4.8.5 below); dummy-injection is a separate, silent, architectural necessity.
+
+**Where each lives**: the FOV/range restriction is a perception-layer concern
+(`crowd_nav_perception::GroundTruthHumanSource::degrade()`, extending the existing
+`DegradationParams::max_range_m` machinery with a new angular-FOV term relative to robot
+heading), because it's a property of *what the robot's sensor can see*, shared by every
+consumer of `HumanStateSource` - including this same supervisor's own `CROWD_SIZE` OOD check
+below, which must only count humans the robot could actually perceive, not the ground-truth
+count. Dummy-injection lives inside `SarlAdapter::buildInputs()` specifically, *not* the shared
+perception layer, for the opposite reason: a supervisor `CROWD_SIZE` check that counted a fake
+placeholder human as real would be corrupted by construction. `GroundTruthHumanSource` currently
+tracks only robot position (`robot_xy_`, `setRobotPose(x,y)`) - the angular check needs heading
+too, added via `setRobotPose(x,y,theta)` and `tf2::getYaw()` on the existing
+`/ground_truth/robot_pose` subscription (same extraction pattern already used in
+`CrowdNavController::buildWorldState()`).
+
+One more honest gap this surfaces: `DegradationParams` defaults are all off (oracle passthrough,
+by explicit design, per its own header comment) and `CrowdNavController::configure()`'s
+production perception wiring (added Phase 8) constructs a bare default-initialized
+`DegradationParams` - meaning **today, in production, neither the range cap nor the (new)
+FOV term is actually enabled**, even though `max_range_m` has existed as a capability since
+Phase 5. Capability existing and capability *active* are different claims; this phase makes the
+production `CrowdNavController::configure()` call explicitly set both
+(`perception_fov_half_angle_rad` default `M_PI/2`, `perception_max_range_m` default `8.0`, both
+new `FollowPath.*` parameters, not hardcoded literals, matching how `pedestrian_topic` etc. are
+already exposed) rather than leaving them as a theoretical, never-exercised code path.
+
+**Verification required at implementation time, not assumed**: attention pooling over exactly
+one human row degenerates only if that row's raw attention score is exactly `0.0` (§4.7's
+masked-softmax finding); for a single injected dummy this is a real, checkable numerical
+question, not a hypothetical - confirm empirically against the actual ONNX network with the
+dummy's specific injected values that the score isn't exactly zero (and thus the softmax
+denominator isn't zero), the same "verify, don't assume" discipline Phase 8 already applied to
+the padding question. If it is exactly zero, perturb the injected placeholder's position by a
+fixed, documented, non-round offset rather than trusting a coincidence not to recur.
+
+**4.8.2 Same costmap, same footprint - structural, not asserted.** Per review: two components
+disagreeing about world state produced Phase 3's infinite-recovery-loop bug (a global planner
+that didn't know about a keep-out zone the local costmap did); the same shape recurs if the
+supervisor forward-simulates against different costmap state than MPPI plans against. The fix
+here is structural rather than a runtime cross-check: `SafetySupervisor` is a plain C++ class,
+**instantiated directly by `CrowdNavController::configure()`**, constructed with the *exact same*
+`costmap_ros_` shared pointer already held there - the identical pointer already passed to
+`fallback_controller_->configure(parent, name, tf, costmap_ros)` two lines below where it would
+be constructed. There is no second subscription, no independent costmap topic, and no "assert
+these match" check to write, because there is only one `Costmap2DROS` instance in this process
+and both the embedded MPPI and the new supervisor read directly from it. This also answers the
+"same footprint" half of the ask without needing a footprint at all: this project's costmap
+uses a scalar `robot_radius` (`0.14m`, `nav2_params.yaml`), not an explicit footprint polygon,
+and MPPI's own `ObstaclesCritic` is already configured `consider_footprint: false` (confirmed
+in Phase 7's own research into this project's actual MPPI config) - meaning MPPI itself already
+treats "cost at a point" (relying on the inflation layer, which was computed *from* that same
+`robot_radius`) as its own collision signal against this costmap. The supervisor's forward-sim
+check (§4.8.3) does the same plain point-cost lookup against the same costmap, which is the
+most consistent choice available: not a second, independently-defined footprint check that
+could quietly drift from MPPI's own, but literally the same primitive MPPI already relies on.
+
+**4.8.3 Bounded forward-simulation, fixed by construction.** Per review and §1.7: the horizon
+and step count are fixed at implementation time, not adaptively refined, so the supervisor's
+worst-case per-tick cost is a known constant rather than a typical one. Concretely: 4 steps at
+`time_step_s = 0.25s` (reusing `CandidateActionSpaceConfig::time_step_s`, already loaded by
+`CrowdNavController` - one source for this number, not a second hand-typed one), i.e. a fixed
+1.0s look-ahead - four `Costmap2D::getCost()` lookups per tick, a bounded, trivial cost. Each
+step forward-integrates using the **candidate's raw holonomic `(vx, vy)`** as a constant-velocity
+world-frame displacement (`x += vx * dt`, `y += vy * dt`), *not* the diff-drive-projected twist
+`toTwistStamped()` would actually send. This is a deliberate approximation, not an oversight:
+the diff-drive projection only ever *shrinks* effective forward progress relative to the
+holonomic target (`cos(heading_error) <= 1`, plus the existing velocity clamp) and only
+gradually turns the robot toward the target heading - so simulating with the full holonomic
+vector is always a conservative over-estimate of how far the robot actually travels toward a
+given point in a given step. The failure direction of this approximation is one-sided: it can
+produce a false-positive stop (rejecting a command the real, more cautious diff-drive-
+constrained robot would have executed safely), never a false negative (approving a command whose
+real, further-foreshortened trajectory turns out more dangerous than what was checked). Stated
+explicitly as an accepted, conservative-by-construction simplification, not silently assumed
+equivalent to the real kinematics - reusing `toTwistStamped()`'s own projection here instead
+would require either baking a stale twist into the held-command state (a regression against
+Phase 7's hold-last-action design, which re-projects the held holonomic vector against the
+*current* pose every tick) or re-running the projection on every 20Hz control tick instead of
+only at 4Hz decision points, which the watchdog boundary isn't scoped to cover.
+
+Per-step check, reusing Nav2's own cost-value semantics (`nav2_costmap_2d/cost_values.hpp`)
+rather than inventing a new threshold: `worldToMap()` first - if the point falls outside the
+local costmap's current rolling window (3m x 3m, `nav2_params.yaml`), that step is *unverifiable*
+and treated as not-unsafe (logged, not silently ignored) rather than either extreme; asserting
+danger for "off the edge of a 1.5m-radius rolling window" would manufacture false positives
+near the window boundary during ordinary driving, and the 4-step/1.0s horizon at this robot's
+configured speeds keeps this rare in practice, not eliminated by assumption. When the point
+*is* in bounds: cost `>= INSCRIBED_INFLATED_OBSTACLE` (253) **and** cost `!= NO_INFORMATION`
+(255) is unsafe - the exclusion matters because `NO_INFORMATION == 255 > 253` would otherwise
+also satisfy the raw `>=` comparison, incorrectly flagging "haven't mapped this cell" the same
+as "this cell is lethal." `FootprintCollisionChecker<CostmapT>` (confirmed to exist,
+`footprint_collision_checker.hpp`) is deliberately *not* used here, even though it's the more
+general primitive - it exists to sweep an actual footprint polygon, which this project's
+costmap configuration doesn't have (`consider_footprint: false` above); using it would mean
+defining a second footprint representation for the supervisor alone, precisely the kind of
+drift-risk §4.8.2 exists to avoid.
+
+**Cause labeling, not the safety decision itself**: the pass/fail decision above uses one
+authoritative source (the shared local costmap). A *separate*, secondary, best-effort
+subscription to `/keepout_filter_mask` (already published by `crowd_nav_zones`' mask server,
+confirmed at `crowd_nav_zones/launch/zones.launch.py`) is used purely to label *which* of
+`COSTMAP_COLLISION` or `KEEPOUT_VIOLATION` goes into the intervention log, since
+`nav2_costmap_2d::KeepoutFilter` (Phase 3) writes the keep-out mask directly into the same local
+costmap's cost values as `LETHAL_OBSTACLE` - a single cost lookup can't tell which cause
+produced a given lethal cell. If this secondary lookup is stale or unavailable, the log
+degrades to the generic `COSTMAP_COLLISION` label; it never changes whether the command is
+rejected, since it isn't consulted for that decision at all.
+
+**4.8.4 Two-tier fallback, not one - a thread-safety constraint, not a style choice.** Per
+§4.6, the watchdog (`ControllerDecisionCore`) already runs `run_policy_decision` on a background
+thread via `std::async`, bounded by `wait_for()`; a genuinely hung (not just slow) call leaves
+that thread running to completion, since C++ has no safe forced termination. If the supervisor's
+rejection response called `fallback_controller_->computeVelocityCommands()` (the embedded MPPI)
+from *inside* `run_policy_decision`, an orphaned background thread past the watchdog window
+could call into the same `fallback_controller_` instance the main thread *also* calls into once
+`decide()` times out - two concurrent calls into one `nav2_core::Controller` instance, the exact
+class of data race §4.6 already went out of its way to prevent for `PolicyAdapter`'s own mutable
+state. So the two triggers get two different responses, not one:
+- **Watchdog timeout** (inference too slow or hung): unchanged from Phase 7 - `decide()` returns
+  `kFallback`, and `CrowdNavController::computeVelocityCommands()` (main thread only, never the
+  background one) calls the embedded MPPI. This is the "give it to a planner that can afford to
+  think longer" response.
+- **Supervisor rejection** (the policy answered in time, but the forward-sim or an OOD check
+  says don't trust or send this): checked *inside* `run_policy_decision`, after
+  `selectAction()` produces a candidate, still on the background thread, still inside the same
+  watchdog-timed window (§1.7). The response is a direct, hard stop (`{0.0, 0.0}`) returned from
+  that same closure - never a call into `fallback_controller_`. This is deliberately not "hand
+  it to MPPI instead": a stop cannot make the immediate-horizon risk the supervisor just detected
+  *worse* (a stationary point re-checks trivially safe at every future forward-sim step, barring
+  a moving obstacle closing in regardless of the robot's own command, which no choice of command
+  prevents anyway) - stated as the honest scope of what this response guarantees (arresting
+  policy-induced risk this tick), not a general recovery mechanism (Nav2's own recovery behaviors
+  already own resolving a pre-existing bad state, out of scope here).
+
+**4.8.5 OOD criteria, implemented against what's actually available.** §4.4's five criteria,
+plus one correction found while wiring `LOW_PERCEPTION_CONFIDENCE` to a real signal: `degrade()`
+currently returns `std::optional<HumanObservation>` and a dropped-out detection is simply absent
+from `getHumans()`'s result - there is no signal anywhere in `WorldState` today that a dropout
+happened versus a human simply not being nearby. Fixed with the smallest change that makes the
+trigger real rather than a permanently-unreachable enum value: a new non-pure virtual,
+`HumanStateSource::numDegradedLastCall()` (default `0`, so `TrackedHumanSource`'s stub and every
+existing call site are unaffected), overridden by `GroundTruthHumanSource` to report how many
+raw detections its *dropout* model discarded on the most recent `getHumans()` call - FOV/range
+exclusions do not count toward this, since a human legitimately outside this robot's real sensor
+coverage is normal operation, not degraded confidence, and conflating the two would make this
+trigger fire on every empty-scene tick regardless of perception quality. `CROWD_SIZE`,
+`PROXIMITY` (0.8m, §4.4), `RELATIVE_SPEED`, and `COMMAND_LIMIT` (checked against the candidate's
+raw holonomic speed, no twist-projection needed) are otherwise implemented exactly as §4.4
+specifies. Each of the 5 OOD causes and the 2 forward-sim causes reject the tick the same way as
+§4.8.4's supervisor-rejection path (hard stop, not MPPI) - `INFERENCE_TIMEOUT` is the only cause
+that uses the embedded-MPPI path, since it's the only one that fires on the main thread via the
+existing watchdog, not inside `run_policy_decision`.
+
+**4.8.6 What this supervisor does and doesn't catch - stated explicitly, per review.** The OOD
+detector's 5 criteria (§4.4) characterize *world-state novelty* relative to the training
+distribution (too many humans, too close, too fast, a suspicious command, a degraded tick) - none
+of them can detect an *input-pipeline* mismatch, where the world state the policy reasons about
+was already wrong before any threshold got a chance to look at it (Phase 8's FOV-filter finding,
+§4.7, is exactly this class of bug: the reference itself pre-processes its input before the
+network sees it, invisibly to any downstream OOD check). §4.8.1's fix resolves the *specific*
+pipeline mismatch found so far; it does not make the OOD detector newly capable of catching
+*future* pipeline bugs of the same shape - that would need a different mechanism (e.g.
+differential testing against the reference implementation, which is what actually caught this
+one), not a runtime threshold. Recorded here so this isn't rediscovered as a surprise limitation
+later, the same way the LiDAR FOV and IL-only-checkpoint limitations are recorded in the
+README's Known Limitations section rather than left implicit.
+
+**4.8.7 `InterventionEvent` - the home §2's forward-note already reserved.** A small message,
+`crowd_nav_safety_supervisor/msg/InterventionEvent.msg`: timestamp, `cause` (the 8-value
+taxonomy in §4.4's closing paragraph), the rejected candidate command, and the substituted
+command actually sent. Published on `/intervention_events` (Phase 10's evaluation harness is
+the eventual consumer, for the "intervention rate broken down by cause" headline metric - a real
+message, not a placeholder for one, is what a future harness can actually subscribe to and log
+to CSV) *and* logged via `RCLCPP_WARN` at the point of rejection, edge-triggered per cause the
+same way Phase 7's source-switch logging already is, for interactive visibility without needing
+to echo a topic during manual testing.
 
 ---
 

@@ -23,7 +23,7 @@ shells pick it up automatically; only needed manually in non-interactive/scripte
 `scripts/check_dds_health.sh` and `scripts/ros2_teardown.sh` provide an automated dirty-state
 check and safe cleanup regardless of which RMW is active - see Phase 2 findings for both.
 
-**Status**: Phase 8 of 12 complete. Phase 2: baseline Nav2 + AMCL + SLAM, 5/5 goals both modes,
+**Status**: Phase 9 of 12 complete. Phase 2: baseline Nav2 + AMCL + SLAM, 5/5 goals both modes,
 verified against ground-truth pose (`docs/phase2-findings.md`). Phase 3: dynamic keep-out
 zones, verified with a real mid-navigation block-and-detour test (`docs/phase3-findings.md`).
 Phase 4: deterministic pedestrian simulation (HuNav dropped - see `IMPLEMENTATION_PLAN.md`
@@ -46,8 +46,14 @@ ONNX export verified bit-close against the original PyTorch checkpoint before an
 written, action-match tested against 10 adversarial cases mined from the reference's own value
 array (top-two gaps as tight as 0.0018%). Found and documented a real architectural gap along
 the way: the checkpoint's own source repo silently FOV-filters its human list before SARL ever
-sees it, which this project does not yet replicate (`docs/phase8-findings.md`). See
-`IMPLEMENTATION_PLAN.md` §3 for the full phase list.
+sees it, which this project did not yet replicate at the time (`docs/phase8-findings.md`).
+Phase 9: the FOV/range filter and dummy-injection fix landed first, before any supervisor code,
+per explicit review sequencing; `crowd_nav_safety_supervisor` - a forward-sim/costmap collision
+check sharing the controller's own costmap instance structurally, a 5-criteria OOD detector, and
+per-cause intervention logging - live-verified in Gazebo with three of its eight trigger causes
+firing for real, non-engineered reasons (a sustained collision rejection held for 90+
+consecutive ticks with zero misses) and a clean baseline run showing zero false positives
+(`docs/phase9-findings.md`). See `IMPLEMENTATION_PLAN.md` §3 for the full phase list.
 
 ## Known limitations (stated deliberately, not discovered as accidents)
 
@@ -82,16 +88,21 @@ visible up front rather than buried in a findings doc no one reads before citing
   `IMPLEMENTATION_PLAN.md` §1.4 of the original brief), but a real limitation until the
   perception-degradation model (noise, dropout, latency, occlusion) is exercised in the
   evaluation harness.
-- **SarlAdapter feeds the network every perceived human, with no field-of-view or range
-  restriction.** The checkpoint's own source repo (`tkkim-robot/Gazebo-CrowdNav`) applies a
-  simulated depth-camera FOV filter (Intel D435I spec: 85.2°/12 m) inside its own `JointState`
-  construction before SARL ever sees the human list - found while building Phase 8's
-  action-match test fixture (`docs/phase8-findings.md`). This project's sensor is a different,
-  narrower device (~180°/8 m, per the LiDAR limitation above), so copying that exact filter
-  would itself be wrong - but feeding the network humans the robot's real sensor couldn't
-  actually see is a genuine, unaddressed distribution-shift risk, not validated against how the
-  checkpoint's source repo evaluated it. Flagged for resolution before Phase 10's numbers are
-  treated as meaningful crowd-interaction results.
+- **The safety supervisor's OOD detector characterizes world-state novelty, not input-pipeline
+  correctness.** Its five criteria (crowd size, proximity, relative speed, command magnitude,
+  perception confidence) flag a scene unlike the training distribution; none of them can detect
+  that the observation reaching the policy was already wrong before any threshold looked at it
+  (Phase 8's FOV-filter finding, resolved in Phase 9, was exactly that class of bug - see
+  `docs/phase9-findings.md` §"Design notes carried into Phase 10+"). A clean OOD-trigger rate is
+  not, by itself, evidence the input pipeline is correct; that needs differential testing
+  against a reference implementation, which is how the Phase 8 bug was actually found.
+- **A specific engineered keep-out-zone trigger for the safety supervisor wasn't cleanly
+  isolated in Phase 9's live Gazebo session** - ad hoc zone placements either blocked the global
+  planner upstream of the supervisor or left room for Nav2 to route around them before the local
+  controller ever needed to reject anything. The same rejection code path was exercised by a
+  real, non-engineered obstacle collision instead (rejected on 90+ consecutive ticks, zero
+  misses - `docs/phase9-findings.md`), so the mechanism is verified, but a direct keep-out-zone
+  demonstration is deferred to a pre-measured Phase 10 scenario rather than repeated ad hoc.
 
 ## Known upstream API/doc discrepancies (verified against real behavior, not assumed)
 

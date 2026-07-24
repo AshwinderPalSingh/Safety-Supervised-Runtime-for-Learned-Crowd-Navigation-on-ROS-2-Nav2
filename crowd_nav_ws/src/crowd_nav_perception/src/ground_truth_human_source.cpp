@@ -4,6 +4,9 @@
 #include <array>
 #include <cmath>
 
+#include "tf2/utils.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+
 namespace crowd_nav_perception
 {
 
@@ -16,9 +19,9 @@ GroundTruthHumanSource::GroundTruthHumanSource(const DegradationParams & params)
 {
 }
 
-void GroundTruthHumanSource::setRobotPose(double x, double y)
+void GroundTruthHumanSource::setRobotPose(double x, double y, double theta)
 {
-  robot_xy_ = std::make_pair(x, y);
+  robot_pose_ = std::make_tuple(x, y, theta);
 }
 
 uint64_t GroundTruthHumanSource::deriveSubstreamSeed(uint64_t scenario_seed, uint32_t subsystem_tag)
@@ -34,7 +37,7 @@ uint64_t GroundTruthHumanSource::deriveSubstreamSeed(uint64_t scenario_seed, uin
 
 void GroundTruthHumanSource::onRobotPose(const geometry_msgs::msg::Pose::SharedPtr msg)
 {
-  robot_xy_ = std::make_pair(msg->position.x, msg->position.y);
+  robot_pose_ = std::make_tuple(msg->position.x, msg->position.y, tf2::getYaw(msg->orientation));
 }
 
 void GroundTruthHumanSource::onPedestrianArray(
@@ -75,11 +78,23 @@ void GroundTruthHumanSource::ingestPedestrian(
 
 std::optional<HumanObservation> GroundTruthHumanSource::degrade(const HumanObservation & raw)
 {
-  if (params_.max_range_m.has_value() && robot_xy_.has_value()) {
-    const double dx = raw.x - robot_xy_->first;
-    const double dy = raw.y - robot_xy_->second;
-    if (std::hypot(dx, dy) > params_.max_range_m.value()) {
+  // FOV/range restriction (IMPLEMENTATION_PLAN.md S4.8.1): what this robot's real sensor could
+  // ever perceive, not a confidence signal - excluded here without touching the dropout
+  // accumulator below, since a human legitimately outside sensor coverage is normal operation.
+  if (robot_pose_.has_value()) {
+    const auto & [rx, ry, rtheta] = robot_pose_.value();
+    const double dx = raw.x - rx;
+    const double dy = raw.y - ry;
+
+    if (params_.max_range_m.has_value() && std::hypot(dx, dy) > params_.max_range_m.value()) {
       return std::nullopt;
+    }
+    if (params_.fov_half_angle_rad.has_value()) {
+      const double angle_to_human = std::atan2(dy, dx) - rtheta;
+      const double normalized_angle = std::atan2(std::sin(angle_to_human), std::cos(angle_to_human));
+      if (std::abs(normalized_angle) > params_.fov_half_angle_rad.value()) {
+        return std::nullopt;
+      }
     }
   }
 
@@ -93,6 +108,9 @@ std::optional<HumanObservation> GroundTruthHumanSource::degrade(const HumanObser
   const bool dropped = dropout_dist_(rng_);
 
   if (dropped) {
+    // Only the dropout model counts toward "degraded" (S4.8.5) - the FOV/range exclusion above
+    // returns before this point and never touches this accumulator.
+    ++dropped_since_query_;
     return std::nullopt;
   }
 
@@ -138,6 +156,10 @@ std::vector<HumanObservation> GroundTruthHumanSource::getHumans(const rclcpp::Ti
       result.push_back(obs.value());
     }
   }
+  // Snapshot-and-reset (S4.8.5): whatever degrade() accumulated since the previous getHumans()
+  // call becomes this call's reported figure, then the accumulator starts fresh for the next one.
+  last_reported_dropped_ = dropped_since_query_;
+  dropped_since_query_ = 0;
   return result;
 }
 

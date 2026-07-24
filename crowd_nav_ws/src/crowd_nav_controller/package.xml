@@ -31,6 +31,7 @@
   <depend>crowd_nav_perception</depend>
   <depend>crowd_nav_policy_adapters</depend>
   <depend>crowd_nav_onnxruntime_vendor</depend>
+  <depend>crowd_nav_safety_supervisor</depend>
 
   <exec_depend>nav2_mppi_controller</exec_depend>
 

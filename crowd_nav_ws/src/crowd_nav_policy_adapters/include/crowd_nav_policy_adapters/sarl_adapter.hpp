@@ -23,10 +23,16 @@ namespace crowd_nav_policy_adapters
 // is mathematically identical to the reference's one-candidate-at-a-time convention, since
 // ValueNetwork.forward()'s attention/mean pooling has no cross-batch-element coupling).
 //
-// Zero-humans case: buildInputs() returns an empty TensorBundle (no rows) - the caller
-// (CrowdNavController) is expected to skip inference entirely on an empty batch and treat this
-// tick as "nothing to decide," per S4.7's documented stopgap (a fuller response is Phase 9's
-// OOD detector's job, not this adapter's).
+// Zero-humans case (IMPLEMENTATION_PLAN.md S4.8.1, revised from S4.7's original stopgap):
+// buildInputs() injects one synthetic placeholder human - positioned along the robot's current
+// heading, far away (ObservationBuilder::kDummyDistanceM), stationary, zero radius - rather
+// than returning an empty batch. This replicates the reference implementation's own
+// JointState/dummyState2 convention: masked-softmax attention over zero rows is architecturally
+// undefined (a divide-by-zero in the pooling denominator), not merely untrained, so the network
+// is never run on a genuinely empty set even though this project's own perception can produce
+// one (unlike the reference, where human_num is fixed and non-zero). This is a distinct concern
+// from the safety supervisor's CROWD_SIZE/PROXIMITY OOD checks (S4.8.5), which operate on the
+// real (pre-injection) human list and must never see this placeholder.
 class SarlAdapter : public PolicyAdapter
 {
 public:

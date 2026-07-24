@@ -18,6 +18,7 @@
 #include "crowd_nav_policy_adapters/onnx_inference.hpp"
 #include "crowd_nav_policy_adapters/sarl_adapter.hpp"
 #include "crowd_nav_policy_adapters/shape_validation.hpp"
+#include "crowd_nav_safety_supervisor/intervention_cause.hpp"
 
 namespace crowd_nav_controller
 {
@@ -32,6 +33,11 @@ using crowd_nav_policy_adapters::runInference;
 using crowd_nav_policy_adapters::SarlAdapter;
 using crowd_nav_policy_adapters::validateSessionShapes;
 using crowd_nav_policy_adapters::Velocity2D;
+using crowd_nav_safety_supervisor::InterventionCause;
+using crowd_nav_safety_supervisor::SafetySupervisor;
+using crowd_nav_safety_supervisor::SafetySupervisorConfig;
+using crowd_nav_safety_supervisor::SupervisorResult;
+using InterventionEvent = crowd_nav_safety_supervisor::msg::InterventionEvent;
 
 CrowdNavController::CrowdNavController()
 : fallback_loader_("nav2_core", "nav2_core::Controller")
@@ -64,6 +70,15 @@ void CrowdNavController::configure(
   nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".robot_pose_topic",
     rclcpp::ParameterValue(std::string("/ground_truth/robot_pose")));
+  // This robot's real sensor geometry (IMPLEMENTATION_PLAN.md S4.8.1), not the SARL checkpoint's
+  // training-side D435I spec (85.2 deg / 12m) - a deliberate divergence, not a hand-typed
+  // literal with no justification; see S4.8.1 for why. Defaults reflect the ~180 deg (S1's
+  // confirmed LiDAR rear-hemisphere masking) / 8m (S3's already-deliberate conservative
+  // budget-sensor spec) figures already stated in the README's Known Limitations section.
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".perception_fov_half_angle_rad", rclcpp::ParameterValue(M_PI_2));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".perception_max_range_m", rclcpp::ParameterValue(8.0));
   // Empty default (not PARAMETER_STRING/required): nav2_params.yaml is loaded as a raw YAML
   // params file with no launch-substitution preprocessing (confirmed against how this
   // project's own launch files pass it to Node(parameters=[...]) - "$(find-pkg-share ...)"
@@ -85,6 +100,19 @@ void CrowdNavController::configure(
     node, plugin_name_ + ".min_linear_vel_mps", rclcpp::ParameterValue(-0.3));
   nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".max_angular_vel_rps", rclcpp::ParameterValue(2.0));
+  // Safety supervisor OOD thresholds (IMPLEMENTATION_PLAN.md S4.4/S4.8.5) - independently
+  // toggleable/tunable, not literals at the call site. forward_sim_dt_s and
+  // max_commanded_speed_mps deliberately have NO separate parameter here - they reuse
+  // action_space_config_.time_step_s and max_linear_vel_mps_ respectively (S4.8.3/S4.4), one
+  // source for each number rather than a second hand-typed default that could drift from it.
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".supervisor_max_train_humans", rclcpp::ParameterValue(5));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".supervisor_min_train_distance_m", rclcpp::ParameterValue(0.8));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".supervisor_max_train_speed_mps", rclcpp::ParameterValue(1.5));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".supervisor_forward_sim_steps", rclcpp::ParameterValue(4));
 
   const std::string fallback_plugin =
     node->get_parameter(plugin_name_ + ".fallback_controller_plugin").as_string();
@@ -106,12 +134,24 @@ void CrowdNavController::configure(
     node->get_parameter(plugin_name_ + ".pedestrian_topic").as_string();
   const std::string robot_pose_topic =
     node->get_parameter(plugin_name_ + ".robot_pose_topic").as_string();
+  const double perception_fov_half_angle_rad =
+    node->get_parameter(plugin_name_ + ".perception_fov_half_angle_rad").as_double();
+  const double perception_max_range_m =
+    node->get_parameter(plugin_name_ + ".perception_max_range_m").as_double();
   watchdog_window_s_ = node->get_parameter(plugin_name_ + ".watchdog_window_s").as_double();
   debug_inject_decision_delay_s_ =
     node->get_parameter(plugin_name_ + ".debug_inject_decision_delay_s").as_double();
   max_linear_vel_mps_ = node->get_parameter(plugin_name_ + ".max_linear_vel_mps").as_double();
   min_linear_vel_mps_ = node->get_parameter(plugin_name_ + ".min_linear_vel_mps").as_double();
   max_angular_vel_rps_ = node->get_parameter(plugin_name_ + ".max_angular_vel_rps").as_double();
+  const int supervisor_max_train_humans =
+    node->get_parameter(plugin_name_ + ".supervisor_max_train_humans").as_int();
+  const double supervisor_min_train_distance_m =
+    node->get_parameter(plugin_name_ + ".supervisor_min_train_distance_m").as_double();
+  const double supervisor_max_train_speed_mps =
+    node->get_parameter(plugin_name_ + ".supervisor_max_train_speed_mps").as_double();
+  const int supervisor_forward_sim_steps =
+    node->get_parameter(plugin_name_ + ".supervisor_forward_sim_steps").as_int();
 
   action_space_config_ = loadCandidateActionSpaceConfig(config_path);
   if (adapter_type == "sarl") {
@@ -133,14 +173,43 @@ void CrowdNavController::configure(
   decision_core_ = std::make_unique<ControllerDecisionCore>(
     action_space_config_.time_step_s, watchdog_window_s_);
 
-  // Live perception (S3 Phase 8/S4.7): default DegradationParams is oracle passthrough (no
-  // noise/dropout/latency) - this phase's focus is the search reimplementation, not perception
-  // degradation, which Phase 5 already tested independently. GroundTruthHumanSource's
-  // production constructor is now templated (fixed this phase - it previously required
+  // Live perception (S3 Phase 8/S4.7): no noise/dropout/latency by default - this project's
+  // perception-degradation model (Phase 5) is exercised deliberately by Phase 10's noise sweep,
+  // not turned on silently here. FOV/range ARE set here, though (S4.8.1) - unlike noise/dropout,
+  // "what this robot's sensor could ever see" isn't a sweep variable, it's this robot's actual,
+  // fixed physical sensor geometry, so it defaults on rather than off. GroundTruthHumanSource's
+  // production constructor is now templated (fixed Phase 8 - it previously required
   // rclcpp::Node, which rclcpp_lifecycle::LifecycleNode is not, see docs/phase7-findings.md).
   DegradationParams perception_params;
+  perception_params.fov_half_angle_rad = perception_fov_half_angle_rad;
+  perception_params.max_range_m = perception_max_range_m;
   human_source_ = std::make_unique<GroundTruthHumanSource>(
     node, pedestrian_topic, robot_pose_topic, perception_params);
+
+  // Safety supervisor (S3 Phase 9, S4.8) - a plain class instantiated here, not a second ROS
+  // node; forward_sim_dt_s reuses action_space_config_.time_step_s and max_commanded_speed_mps
+  // reuses max_linear_vel_mps_ (both already resolved above), one source for each rather than a
+  // second hand-typed default (S4.8.3/S4.4).
+  SafetySupervisorConfig supervisor_config;
+  supervisor_config.max_train_humans = static_cast<uint32_t>(supervisor_max_train_humans);
+  supervisor_config.min_train_distance_m = supervisor_min_train_distance_m;
+  supervisor_config.max_train_speed_mps = supervisor_max_train_speed_mps;
+  supervisor_config.forward_sim_steps = supervisor_forward_sim_steps;
+  supervisor_config.forward_sim_dt_s = action_space_config_.time_step_s;
+  supervisor_config.max_commanded_speed_mps = max_linear_vel_mps_;
+  supervisor_ = std::make_unique<SafetySupervisor>(supervisor_config);
+
+  // Secondary, best-effort cause-labeling lookup (S4.8.3) - transient_local to match
+  // nav2_map_server's own latched-map QoS convention (crowd_nav_zones' mask_server is a
+  // map_server instance, docs/phase3-findings.md), so a late-starting subscriber still gets the
+  // current mask rather than only future updates. A never-received mask just means every
+  // rejection on a keep-out cell logs as the generic COSTMAP_COLLISION instead of
+  // KEEPOUT_VIOLATION - it never changes the safety decision itself.
+  keepout_mask_sub_ = node->create_subscription<nav_msgs::msg::OccupancyGrid>(
+    "/keepout_filter_mask", rclcpp::QoS(1).transient_local(),
+    [this](const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {onKeepoutMask(msg);});
+
+  intervention_pub_ = node->create_publisher<InterventionEvent>("/intervention_events", 10);
 
   try {
     fallback_controller_ = fallback_loader_.createUniqueInstance(fallback_plugin);
@@ -165,11 +234,15 @@ void CrowdNavController::cleanup()
   adapter_.reset();
   decision_core_.reset();
   human_source_.reset();
+  supervisor_.reset();
+  keepout_mask_sub_.reset();
+  intervention_pub_.reset();
 }
 
 void CrowdNavController::activate()
 {
   fallback_controller_->activate();
+  intervention_pub_->on_activate();
   auto node = node_.lock();
   dyn_params_handler_ = node->add_on_set_parameters_callback(
     std::bind(&CrowdNavController::onSetParameters, this, std::placeholders::_1));
@@ -178,6 +251,7 @@ void CrowdNavController::activate()
 void CrowdNavController::deactivate()
 {
   fallback_controller_->deactivate();
+  intervention_pub_->on_deactivate();
   dyn_params_handler_.reset();
 }
 
@@ -205,6 +279,34 @@ rcl_interfaces::msg::SetParametersResult CrowdNavController::onSetParameters(
     }
   }
   return result;
+}
+
+void CrowdNavController::onKeepoutMask(const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
+{
+  std::lock_guard<std::mutex> lock(keepout_mask_mutex_);
+  latest_keepout_mask_ = msg;
+}
+
+void CrowdNavController::publishIntervention(
+  InterventionCause cause, const Velocity2D & rejected, const Velocity2D & sent)
+{
+  InterventionEvent msg;
+  msg.stamp = node_.lock()->get_clock()->now();
+  msg.cause = crowd_nav_safety_supervisor::toMsgValue(cause);
+  msg.rejected_vx = rejected.vx;
+  msg.rejected_vy = rejected.vy;
+  msg.sent_vx = sent.vx;
+  msg.sent_vy = sent.vy;
+  intervention_pub_->publish(msg);
+
+  // Edge-triggered (S4.8.7), same idea as logged_source_is_fallback_ below - avoids spamming
+  // the log every tick while a sustained rejection persists.
+  if (!logged_intervention_active_) {
+    RCLCPP_WARN(
+      logger_, "CrowdNavController '%s': safety supervisor rejected command (cause=%s)",
+      plugin_name_.c_str(), crowd_nav_safety_supervisor::toString(cause).c_str());
+    logged_intervention_active_ = true;
+  }
 }
 
 void CrowdNavController::setPlan(const nav_msgs::msg::Path & path)
@@ -289,10 +391,13 @@ geometry_msgs::msg::TwistStamped CrowdNavController::computeVelocityCommands(
 
   const rclcpp::Time now = node_.lock()->get_clock()->now();
 
-  // Supervisor-check placeholder (IMPLEMENTATION_PLAN.md S1.7/S4.6): Phase 9's forward-sim/
-  // costmap check will be called here, inside this same closure, so its cost is covered by the
-  // watchdog window from day one rather than requiring this boundary to be reworked later. It
-  // is a no-op today because the supervisor doesn't exist yet.
+  // Safety supervisor check (IMPLEMENTATION_PLAN.md S1.7/S4.6/S4.8): runs inside this same
+  // closure, after selectAction() produces a candidate, so its cost is covered by the watchdog
+  // window (S1.7) rather than being a separate, unbounded step. Rejection returns a direct
+  // controlled stop rather than delegating to fallback_controller_ - calling into the embedded
+  // MPPI from this background thread would race against the main thread's own call to it on a
+  // watchdog timeout (S4.8.4), a concurrency hazard S4.6 already went out of its way to avoid
+  // for PolicyAdapter's mutable state.
   auto run_policy_decision = [this, pose, velocity, now]() -> Velocity2D {
       if (debug_inject_decision_delay_s_ > 0.0) {
         std::this_thread::sleep_for(
@@ -300,16 +405,42 @@ geometry_msgs::msg::TwistStamped CrowdNavController::computeVelocityCommands(
       }
       const WorldState state = buildWorldState(pose, velocity, now);
       const auto inputs = adapter_->buildInputs(state);
-      // Empty batch (S4.7's zero-humans stopgap: SarlAdapter returns no rows when there's
-      // nothing to reason about) - skip inference entirely rather than call the network with
-      // a degenerate zero-length input. Adapter-agnostic: DummyAdapter never produces an empty
-      // batch (its padding always fills all max_humans slots), so this never triggers for it.
+      // Defensive guard, not a normally-hit path for either adapter (S4.8.1 revised SarlAdapter
+      // to inject a dummy human rather than return an empty batch when perception has nothing to
+      // report; DummyAdapter's padding always fills all max_humans slots). Kept so a batch
+      // that's empty for some other reason (misconfiguration, a future adapter) still skips
+      // inference rather than calling the network with a degenerate zero-length input.
       if (inputs.data.empty() || inputs.data[0].empty()) {
         return {0.0, 0.0};
       }
       const auto outputs = runInference(*ort_session_, inputs, adapter_->expectedShape().output_names);
-      // Supervisor check placeholder call site - no-op until Phase 9.
-      return adapter_->selectAction(outputs, state);
+      const Velocity2D candidate = adapter_->selectAction(outputs, state);
+
+      // OOD criteria first (S4.4/S4.8.5) - cheap, no costmap needed. `state` here is the
+      // ORIGINAL WorldState, never one that's been through an adapter's own dummy-injection
+      // (S4.8.1), so CROWD_SIZE/PROXIMITY can't be corrupted by a placeholder human.
+      SupervisorResult supervisor_result =
+        supervisor_->checkOodCriteria(state, candidate, human_source_->numDegradedLastCall());
+
+      if (supervisor_result.safe) {
+        nav_msgs::msg::OccupancyGrid::SharedPtr keepout_mask_snapshot;
+        {
+          std::lock_guard<std::mutex> lock(keepout_mask_mutex_);
+          keepout_mask_snapshot = latest_keepout_mask_;
+        }
+        // costmap_ros_->getCostmap() fetched fresh this call, not cached at configure() time
+        // (S4.8.2) - the SAME Costmap2D* the embedded MPPI itself reads from, since both this
+        // controller and fallback_controller_ were configured with the identical costmap_ros_.
+        supervisor_result = supervisor_->checkForwardSim(
+          state, candidate, costmap_ros_->getCostmap(), keepout_mask_snapshot.get());
+      }
+
+      if (!supervisor_result.safe) {
+        publishIntervention(*supervisor_result.cause, candidate, {0.0, 0.0});
+        return {0.0, 0.0};
+      }
+      logged_intervention_active_ = false;
+      return candidate;
     };
 
   const DecisionResult result = decision_core_->decide(now, run_policy_decision);
@@ -320,6 +451,12 @@ geometry_msgs::msg::TwistStamped CrowdNavController::computeVelocityCommands(
       logger_, "CrowdNavController '%s': command source switched to %s",
       plugin_name_.c_str(), source_is_fallback ? "FALLBACK" : "policy");
     logged_source_is_fallback_ = source_is_fallback;
+    if (source_is_fallback) {
+      // INFERENCE_TIMEOUT (S4.8.5) - the one cause that fires on the main thread via the
+      // existing watchdog, not inside run_policy_decision; no candidate existed to reject
+      // (inference/supervisor didn't finish in time), so rejected/sent are both zeroed.
+      publishIntervention(InterventionCause::kInferenceTimeout, {0.0, 0.0}, {0.0, 0.0});
+    }
   }
 
   if (source_is_fallback) {

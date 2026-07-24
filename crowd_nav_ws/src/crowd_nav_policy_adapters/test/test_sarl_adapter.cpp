@@ -201,21 +201,58 @@ TEST(SarlAdapterRadiusSplit, SelfStateRadiusFedToNetworkIsPolicyRadiusNotUrdfRad
     << "self-state radius must not silently be the physical URDF radius";
 }
 
-// Zero-humans stopgap (S4.7): buildInputs() returns an empty batch so the caller
-// (CrowdNavController) never invokes the network with a degenerate zero-length input;
-// selectAction() defensively returns the stop action even if called directly.
-TEST(SarlAdapterZeroHumans, BuildInputsReturnsEmptyBatchAndSelectActionReturnsStop)
+// Dummy-injection-on-empty (IMPLEMENTATION_PLAN.md S4.8.1, revised from S4.7's original
+// empty-batch stopgap): buildInputs() must inject exactly one synthetic human rather than
+// returning a zero-length batch, replicating the reference's own JointState/dummyState2
+// convention so the network is never run on a genuinely empty, architecturally-untested input.
+TEST(SarlAdapterDummyInjection, BuildInputsProducesOneHumanBatchNotEmpty)
 {
-  const CandidateActionSpaceConfig config;
+  const CandidateActionSpaceConfig config =
+    loadCandidateActionSpaceConfig(packageDir() + "/config/policy_adapter.yaml");
   SarlAdapter adapter(config);
   WorldState state;
   state.robot = {0.0, 0.0, 0.0, 0.0, 0.3, 5.0, 0.0, 1.0, 0.0};
   // No humans added - state.humans stays empty.
 
   const auto inputs = adapter.buildInputs(state);
-  EXPECT_TRUE(inputs.data.empty() || inputs.data[0].empty());
+  ASSERT_FALSE(inputs.data.empty());
+  ASSERT_FALSE(inputs.data[0].empty());
+  ASSERT_EQ(inputs.shapes.size(), 1u);
+  ASSERT_EQ(inputs.shapes[0].size(), 3u);
+  // num_humans dimension (index 1) must be exactly 1 - the injected placeholder, not "however
+  // many happened to be padded in," and not the old empty (0) shape.
+  EXPECT_EQ(inputs.shapes[0][1], 1);
+}
 
-  const auto command = adapter.selectAction({}, state);
-  EXPECT_DOUBLE_EQ(command.vx, 0.0);
-  EXPECT_DOUBLE_EQ(command.vy, 0.0);
+// The actual empirical question S4.8.1 flagged as "verify, don't assume": masked-softmax
+// attention over a single row is only degenerate (a 0/0 divide in the pooling denominator) if
+// that row's raw attention score is exactly 0.0. Run the REAL exported network (not a mock) on
+// the injected dummy and confirm the output is finite - this is the check that would actually
+// catch the degenerate case, not a reasoned-about assumption that it can't happen.
+TEST(SarlAdapterDummyInjection, RealNetworkProducesFiniteNonDegenerateCommand)
+{
+  const CandidateActionSpaceConfig config =
+    loadCandidateActionSpaceConfig(packageDir() + "/config/policy_adapter.yaml");
+  SarlAdapter adapter(config);
+  WorldState state;
+  state.robot = {0.0, 0.0, 0.0, 0.0, 0.3, 5.0, 0.0, 1.0, 0.0};
+  // No humans added - state.humans stays empty, forcing dummy-injection.
+
+  const auto inputs = adapter.buildInputs(state);
+
+  Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "test_sarl_adapter_dummy_injection");
+  Ort::SessionOptions options;
+  Ort::Session session(env, (packageDir() + "/models/sarl_value_net.onnx").c_str(), options);
+  ASSERT_NO_THROW(validateSessionShapes(session, adapter.expectedShape()));
+  const auto outputs = runInference(session, inputs, adapter.expectedShape().output_names);
+
+  ASSERT_FALSE(outputs.data.empty());
+  for (float v : outputs.data[0]) {
+    ASSERT_TRUE(std::isfinite(v)) << "network output is not finite for the injected dummy - "
+      "the single-human masked-softmax degeneracy S4.8.1 flagged as a real risk did occur";
+  }
+
+  const auto command = adapter.selectAction(outputs, state);
+  EXPECT_TRUE(std::isfinite(command.vx));
+  EXPECT_TRUE(std::isfinite(command.vy));
 }

@@ -23,6 +23,7 @@ find_package(crowd_nav_observation REQUIRED)
 find_package(crowd_nav_perception REQUIRED)
 find_package(crowd_nav_policy_adapters REQUIRED)
 find_package(crowd_nav_onnxruntime_vendor REQUIRED)
+find_package(crowd_nav_safety_supervisor REQUIRED)
 
 set(dependencies
   rclcpp
@@ -40,6 +41,7 @@ set(dependencies
   crowd_nav_observation
   crowd_nav_perception
   crowd_nav_policy_adapters
+  crowd_nav_safety_supervisor
 )
 
 # SHARED, not the CMake default in this workspace (static) - pluginlib's class_loader loads

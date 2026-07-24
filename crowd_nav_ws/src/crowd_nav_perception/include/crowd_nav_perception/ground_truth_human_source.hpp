@@ -6,6 +6,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -78,6 +79,13 @@ public:
   explicit GroundTruthHumanSource(const DegradationParams & params);
 
   std::vector<HumanObservation> getHumans(const rclcpp::Time & query_time) override;
+  // Number of raw detections the dropout model discarded strictly between the previous
+  // getHumans() call and this one - getHumans() snapshots the live accumulator
+  // (dropped_since_query_) into last_reported_dropped_ and resets the accumulator each time it
+  // runs, so this always reflects "since I was last asked," the granularity the safety
+  // supervisor's per-decision-tick OOD check actually needs (S4.8.5), regardless of how many
+  // ingestPedestrian() calls (each potentially dropping independently) landed in between.
+  uint32_t numDegradedLastCall() const override {return last_reported_dropped_;}
 
   // Derives an independent, deterministic 64-bit seed from one scenario seed plus a small
   // integer tag identifying the logical subsystem (e.g. 0 reserved for pedestrian motion - not
@@ -91,7 +99,9 @@ public:
   // without standing up real publishers/subscriptions - the degradation/latency/RNG logic is
   // what needs coverage, not rclcpp's own message-passing.
   void ingestPedestrian(uint32_t id, double x, double y, double vx, double vy, const rclcpp::Time & stamp);
-  void setRobotPose(double x, double y);
+  // theta: robot's current heading (radians, world frame) - required now that the FOV check
+  // (S4.8.1) needs it, unlike the range-only check this replaces which only needed position.
+  void setRobotPose(double x, double y, double theta);
 
 private:
   void onPedestrianArray(const crowd_nav_pedestrians::msg::PedestrianArray::SharedPtr msg);
@@ -106,7 +116,14 @@ private:
   std::normal_distribution<double> vel_noise_dist_;
   std::bernoulli_distribution dropout_dist_;
 
-  std::optional<std::pair<double, double>> robot_xy_;
+  // (x, y, theta) - theta added v1.17/Phase 9 for the FOV check (S4.8.1); unset until the first
+  // setRobotPose()/onRobotPose() call, same "not available yet" semantics robot_xy_ had before.
+  std::optional<std::tuple<double, double, double>> robot_pose_;
+
+  // Accumulator (mutated by degrade(), non-const) vs. the const-readable snapshot
+  // numDegradedLastCall() exposes - see that method's comment for why two members are needed.
+  uint32_t dropped_since_query_ = 0;
+  uint32_t last_reported_dropped_ = 0;
 
   // Per-human history of raw (pre-latency, post-noise/dropout) observations, each tagged with
   // the sim timestamp it was received at - the actual latency mechanism, see class comment.
