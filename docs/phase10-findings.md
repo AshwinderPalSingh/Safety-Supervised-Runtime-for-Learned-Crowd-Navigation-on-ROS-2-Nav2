@@ -100,11 +100,15 @@ detection gap.
 - **The keep-out zone demonstration**: still a clean three-way contrast (baseline detours and
   succeeds; `policy_raw` still drives straight into the zone and violates it; `policy_supervised`
   still forward-sim-rejects every attempt - 408 `KEEPOUT_VIOLATION` + 31 `COSTMAP_COLLISION`
-  rejections, zero actual violations, still times out rather than routing around). See the
-  corrected table below.
-- **The noise-sweep cliff and saturation pattern**: still present, same shape (a sharp jump in
-  intervention rate from `dropout_prob` 0.0&rarr;0.1, then roughly flat through 0.5), with
-  slightly different exact numbers - see below.
+  rejections, zero actual violations, still times out rather than routing around) - and this one
+  is *mechanistically* independent of the frame-bug fix, not just coincidentally similar: the
+  scenario runs zero pedestrians by design, so the fix's per-human offset correction has no
+  humans to act on either way. See the corrected table below for the confirming detail.
+- **The noise-sweep saturation mechanism**: still holds precisely (rate-normalized intervention
+  count jumps 0.0&rarr;0.1 then stays flat through 0.5) - **but the outcome-level "cliff"
+  location does not survive unchanged**: the corrected data shows a more gradual success-rate
+  decline starting at 0.0&rarr;0.1, not a sharp single-step collapse specifically between 0.1 and
+  0.2 as originally described. See the Noise sweep section below for the precise correction.
 - **Efficiency**: `policy_raw`/`policy_supervised` remain slower and take longer paths than
   `baseline_mppi` in every family, as the original review predicted.
 - **The OOD-reachability fixes** (`docs/audit.md` §1.1) all still work under the corrected
@@ -322,19 +326,45 @@ Plots (regenerated against corrected data): `results/plots/outcome_rates.png`,
 | 0.3 | 8 timeout | 432.5 | 3.60/s |
 | 0.5 | 7 timeout, 1 collision | 413.2 | 3.57/s |
 
-Same shape as the original run: a sharp jump in intervention rate from dropout 0.0 to 0.1
-(1.22 &rarr; 3.23/s), then roughly flat through 0.5 (3.57-3.68/s) - the same saturation
-conclusion holds: the supervisor does not compensate harder as perception degrades past roughly
-0.1, because the policy itself is already about as confused as it gets. Exact values differ from
-the original run (the policy's own inputs are now correct, which changes exactly how quickly it
-gets confused), but the qualitative finding - a cliff, then saturation, not a rising floor - is
-unchanged and re-confirmed against corrected data.
+**The rate-based saturation conclusion holds, re-confirmed precisely**: intervention rate jumps
+sharply from dropout 0.0 to 0.1 (1.22 &rarr; 3.23/s), then stays essentially flat through 0.5
+(3.57-3.68/s) - the same mechanism as the original run: the supervisor does not compensate
+harder as perception degrades past roughly 0.1, because the policy itself is already about as
+confused as it gets. This is the load-bearing conclusion (the noise sweep exists to distinguish
+"compensation" from "saturation," §8.4) and it is unchanged.
+
+**One honest correction to the original framing, found by re-checking rather than assuming "same
+shape" applies to every number in this section**: the original run described "a sharp,
+reproducible failure cliff between `dropout_prob` 0.1 and 0.2" at the outcome level (success
+collapsing from 7/8 to 0/8 at that specific boundary). The corrected outcome distribution does
+not show a single sharp step at that boundary - it shows a more gradual decline starting a point
+earlier: success drops from 4/8 (0.0) to 2/8 (0.1) to 0/8 (0.2), not from 7/8 (0.1) to 0/8 (0.2).
+The underlying *mechanism* conclusion (saturation, not a rising floor) is unaffected by this -
+the rate-normalized numbers above make that case independently of where exactly success hits
+zero - but the specific claim "the cliff is between 0.1 and 0.2" no longer accurately describes
+the corrected data and is retired rather than carried forward unchecked. With the policy's own
+perception now correct, it evidently starts struggling with degraded input a step earlier than
+the buggy run suggested.
 
 Plot: `results/plots/noise_sweep.png`.
 
 ---
 
-## `depot_keepout_block` - corrected numbers, same qualitative result
+## `depot_keepout_block` - corrected numbers, confirmed independent of the frame bug
+
+**This scenario is mechanistically independent of the §1.3 frame-mismatch bug, not just
+coincidentally similar before and after the fix.** `KEEPOUT_BLOCK_SCENARIO` sets
+`num_pedestrians: 0` explicitly (`scenarios.py`'s own comment: "isolate the keep-out mechanism,
+not perception/crowd effects") - with zero real pedestrians, `GroundTruthHumanSource::getHumans()`
+returns an empty list regardless of whether `setRobotMapPose()`'s offset correction is applied,
+since the fix's per-human offset loop (`for (auto & h : result) ...`) has nothing to iterate over
+either way. Both the policy's candidate search (which falls back to `SarlAdapter`'s dummy-human
+injection, itself keyed off the robot's own heading, not any human position) and the supervisor's
+forward-sim/costmap check (map-frame robot pose against the map-frame costmap, no human position
+involved at all) are untouched by this fix by construction. The small numeric differences below
+are consistent with ordinary run-to-run Gazebo real-time-factor variation between separate
+sessions (already documented as a real effect in this project, §1.6/`docs/audit.md`), not the
+frame-bug fix.
 
 | config | outcome | path_length_m | interventions | dominant cause |
 |---|---|---|---|---|
@@ -342,7 +372,8 @@ Plot: `results/plots/noise_sweep.png`.
 | policy_raw | **keepout_violation** | 0.53 | 0 | - |
 | policy_supervised | timeout | 0.70 | 439 | KEEPOUT_VIOLATION x408, COSTMAP_COLLISION x31 |
 
-Unchanged in every qualitative respect from the original run: `baseline_mppi` detours around the
+Unchanged in every qualitative respect from the original run (428 total interventions, 425
+`KEEPOUT_VIOLATION` + 3 `COSTMAP_COLLISION`, path 0.38 m): `baseline_mppi` detours around the
 zone via the global costmap; `policy_raw` drives into the zone almost immediately, exactly as
 SARL's lack of any keep-out concept predicts; `policy_supervised`'s forward-sim correctly
 identifies and rejects the unsafe approach on essentially every tick attempted - **zero** actual

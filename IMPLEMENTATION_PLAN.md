@@ -378,7 +378,14 @@ collision rate than both `baseline_mppi` and `policy_raw`, in both scenario fami
 in full per the standing "report it even if my method didn't win" instruction, alongside the
 `depot_keepout_block` result that shows the supervisor's mechanism does work exactly as
 designed (425/425 correct rejections, zero violations) even while the collision-rate result
-shows it isn't a strict safety improvement in every condition.
+shows it isn't a strict safety improvement in every condition. **This collision-rate finding is
+superseded** - see the v1.20-era Phase 10 entry's correction under "Phase 10 - CLOSED" (§3, and
+`docs/phase10-findings.md`'s "CORRECTION" section): a later hard audit found the frame bug that
+made `depot_keepout_block`'s first run meaningless (mentioned above) also corrupted the policy's
+own perceived human positions in every episode, and the corrected re-run shows the opposite -
+`policy_supervised` matches `baseline_mppi` exactly (12%/12%) while the raw policy alone is the
+one that's actually less safe (50%). Left here unedited, per this document's own practice of
+recording corrections as new entries rather than rewriting a prior version's claims.
 
 **v1.21 changes (2026-07-24)**: Phase 11 implemented and closed - CI (per-PR build/test/lint
 gate, nightly Gazebo smoke test with topic-liveness assertions), README rewritten to lead with
@@ -1197,11 +1204,18 @@ review met, each verified rather than assumed:
    (96 core episodes), `dropout_prob ∈ {0.0, 0.1, 0.2, 0.3, 0.5}` sweep on
    `policy_supervised`/`open_arena`/`reactive` (40 episodes) - both numbers held unchanged
    through the full run.
-3. **The expected-result-shape framing held, and then some**: `policy_supervised` underperforms
-   `baseline_mppi` on efficiency as predicted, but the matrix also surfaced a less flattering,
-   unpredicted result - a **higher** collision rate than both alternatives under reactive
-   pedestrians, in both scenario families - reported prominently in the findings doc rather than
-   the efficiency gap alone.
+3. **The expected-result-shape framing held on efficiency, and (per a later correction) on
+   safety too**: `policy_supervised` underperforms `baseline_mppi` on efficiency as predicted.
+   The matrix's first run also surfaced what looked like a less flattering, unpredicted result -
+   a higher collision rate than both alternatives under reactive pedestrians - but this was
+   later found (a dedicated hard audit, after Phase 11 closed the project) to be an artifact of
+   a coordinate-frame bug in `buildWorldState()` that had been corrupting the policy's own
+   perceived human positions, not just a supervisor-side diagnostic. Corrected, after the fix
+   and a full matrix re-run: `policy_supervised` matches `baseline_mppi`'s collision rate exactly
+   (12% vs 12%) under reactive pedestrians, while the *raw* unsupervised policy is measurably
+   less safe (50%) - the opposite of the original headline. See `docs/audit.md` §1.3 and
+   `docs/phase10-findings.md`'s "CORRECTION" section for the full account; this entry is left
+   as the historical record of what Phase 10 first reported, not silently rewritten.
 
 `depot_keepout_block` (§4.9.3) initially produced a meaningless result: zero supervisor
 interventions across all three configs, contradicting the plan's own stated expectation that
@@ -1213,10 +1227,13 @@ now checks `/amcl_pose`, not `/ground_truth/robot_pose`) and the scenario defini
 map-frame position was itself wrong, chosen with world-frame intuition). Re-run to a decisive
 result matching the original hypothesis: `baseline_mppi` routes around the zone via the global
 costmap planner, `policy_raw` drives straight into it, `policy_supervised`'s forward-sim
-rejects the identical approach 425/425 times (zero violations) but has no way to route around
-it, so it gets stuck rather than succeeding. Full root-cause trace and the noise-sweep cliff's
-rate-normalized saturation analysis (ruling out "supervisor floor" as an alternative
-explanation) are both in docs/phase10-findings.md, not left implicit in a CSV.
+rejects the identical approach every time it's attempted (zero violations, 425/425 at the time
+of this entry, 439/439 after the later hard-audit re-run - this specific scenario runs zero
+pedestrians by design and is confirmed independent of the frame bug above, `docs/phase10-
+findings.md`) but has no way to route around it, so it gets stuck rather than succeeding. Full
+root-cause trace and the noise-sweep cliff's rate-normalized saturation analysis (ruling out
+"supervisor floor" as an alternative explanation) are both in docs/phase10-findings.md, not left
+implicit in a CSV.
 
 A previously-undiagnosed Gazebo bug was also found and fixed this phase: `PosePublisher` never
 actually published on this gz-sim version, meaning `/ground_truth/robot_pose` had never worked
