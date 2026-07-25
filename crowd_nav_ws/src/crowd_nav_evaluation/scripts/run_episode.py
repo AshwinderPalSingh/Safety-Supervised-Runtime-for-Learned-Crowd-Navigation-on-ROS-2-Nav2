@@ -176,6 +176,12 @@ def run(episode, log_dir):
         f"controller_plugin:={config['controller_plugin']}",
         f"adapter_type:={config['adapter_type']}",
         f"supervisor_enabled:={config['supervisor_enabled']}",
+        # Defensive default, not just config[...]: every CONFIGS entry in scenarios.py pins this
+        # explicitly to "ground_truth" (docs/lidar_perception-findings.md), but .get() means a
+        # future config dict that forgets to set it fails safe to the oracle (reproducible,
+        # comparable to existing results) rather than silently picking up
+        # CrowdNavController's own "lidar_tracked" default.
+        f"human_source_type:={config.get('human_source_type', 'ground_truth')}",
         f"perception_dropout_prob:={episode['dropout_prob']}",
         f"perception_degradation_seed:={episode['seed']}",
     ]

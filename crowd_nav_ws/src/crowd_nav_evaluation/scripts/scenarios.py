@@ -24,21 +24,33 @@ PED_RADIUS_M = 0.25
 COLLISION_DISTANCE_M = ROBOT_PHYSICAL_RADIUS_M + PED_RADIUS_M
 
 
+# human_source_type pinned to "ground_truth" explicitly on every config below, not left to
+# CrowdNavController's own default (which is "lidar_tracked" as of docs/lidar_perception-
+# findings.md - a bare launch should reflect real, sensor-based perception). Every episode this
+# harness has ever run, and every headline number in docs/phase10-findings.md/docs/audit.md, was
+# produced against the ground-truth oracle - pinning it here keeps the entire already-reported
+# 142-episode matrix exactly reproducible regardless of what the controller's own default becomes
+# later. A real perception-in-the-loop evaluation (running these same scenarios against
+# LidarHumanTrackerSource instead) is a deliberate, separate follow-on measurement, not something
+# that should happen silently as a side effect of changing a default elsewhere.
 CONFIGS = {
     "baseline_mppi": {
         "controller_plugin": "nav2_mppi_controller::MPPIController",
         "adapter_type": "dummy",  # unused - MPPIController never reads FollowPath.adapter_type
         "supervisor_enabled": "false",
+        "human_source_type": "ground_truth",
     },
     "policy_raw": {
         "controller_plugin": "crowd_nav_controller::CrowdNavController",
         "adapter_type": "sarl",
         "supervisor_enabled": "false",
+        "human_source_type": "ground_truth",
     },
     "policy_supervised": {
         "controller_plugin": "crowd_nav_controller::CrowdNavController",
         "adapter_type": "sarl",
         "supervisor_enabled": "true",
+        "human_source_type": "ground_truth",
     },
 }
 

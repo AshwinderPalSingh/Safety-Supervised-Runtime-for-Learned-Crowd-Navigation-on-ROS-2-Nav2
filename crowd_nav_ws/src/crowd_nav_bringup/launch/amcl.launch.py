@@ -39,6 +39,15 @@ def generate_launch_description():
     # INFERENCE_TIMEOUT firing for real rather than leave it a permanently-untested mechanism.
     debug_inject_decision_delay_s_arg = DeclareLaunchArgument(
         'debug_inject_decision_delay_s', default_value='0.0')
+    # docs/lidar_perception-findings.md: which HumanStateSource CrowdNavController constructs.
+    # Defaults to 'lidar_tracked' - a bare launch of this file should reflect what actually runs
+    # on real hardware (the whole point of building LidarHumanTrackerSource), not the
+    # ground-truth oracle. crowd_nav_evaluation's scenarios.py explicitly overrides this to
+    # 'ground_truth' for every existing scenario, so this default change does not alter any
+    # already-reported evaluation result.
+    human_source_type_arg = DeclareLaunchArgument(
+        'human_source_type', default_value='lidar_tracked')
+    scan_topic_arg = DeclareLaunchArgument('scan_topic', default_value='/scan')
 
     spawn = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -96,6 +105,8 @@ def generate_launch_description():
             LaunchConfiguration('perception_degradation_seed'), value_type=int),
         'FollowPath.debug_inject_decision_delay_s': ParameterValue(
             LaunchConfiguration('debug_inject_decision_delay_s'), value_type=float),
+        'FollowPath.human_source_type': LaunchConfiguration('human_source_type'),
+        'FollowPath.scan_topic': LaunchConfiguration('scan_topic'),
     }
     controller_server = Node(
         package='nav2_controller', executable='controller_server', output='screen',
@@ -147,6 +158,8 @@ def generate_launch_description():
         perception_dropout_prob_arg,
         perception_degradation_seed_arg,
         debug_inject_decision_delay_s_arg,
+        human_source_type_arg,
+        scan_topic_arg,
         spawn,
         zones,
         map_server,

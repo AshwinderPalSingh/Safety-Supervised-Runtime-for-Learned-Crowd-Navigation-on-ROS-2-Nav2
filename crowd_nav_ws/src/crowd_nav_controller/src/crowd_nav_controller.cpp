@@ -14,6 +14,7 @@
 
 #include "crowd_nav_perception/degradation_params.hpp"
 #include "crowd_nav_perception/ground_truth_human_source.hpp"
+#include "crowd_nav_perception/lidar_human_tracker_source.hpp"
 #include "crowd_nav_policy_adapters/dummy_adapter.hpp"
 #include "crowd_nav_policy_adapters/onnx_inference.hpp"
 #include "crowd_nav_policy_adapters/sarl_adapter.hpp"
@@ -26,6 +27,8 @@ namespace crowd_nav_controller
 using crowd_nav_observation::WorldState;
 using crowd_nav_perception::DegradationParams;
 using crowd_nav_perception::GroundTruthHumanSource;
+using crowd_nav_perception::LidarHumanTrackerSource;
+using crowd_nav_perception::LidarPerceptionParams;
 using crowd_nav_policy_adapters::CandidateActionSpaceConfig;
 using crowd_nav_policy_adapters::DummyAdapter;
 using crowd_nav_policy_adapters::loadCandidateActionSpaceConfig;
@@ -93,6 +96,41 @@ void CrowdNavController::configure(
     node, plugin_name_ + ".perception_dropout_prob", rclcpp::ParameterValue(0.0));
   nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".perception_degradation_seed", rclcpp::ParameterValue(0));
+  // "ground_truth" (GroundTruthHumanSource, Phase 5 - privileged Gazebo positions, a
+  // deliberate oracle mode for CI/differential testing, never usable on real hardware) or
+  // "lidar_tracked" (LidarHumanTrackerSource - clusters the robot's own /scan, the only source
+  // that works unmodified on the real robot). Defaults to "lidar_tracked": a bare, undecorated
+  // launch of this controller should reflect what actually runs on hardware, not the oracle -
+  // docs/lidar_perception-findings.md. The evaluation harness (crowd_nav_evaluation) explicitly
+  // overrides this to "ground_truth" for every existing scenario, so the already-reported
+  // 142-episode matrix (docs/phase10-findings.md, docs/audit.md) stays exactly reproducible;
+  // this default only takes effect for anyone launching outside that harness.
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".human_source_type",
+    rclcpp::ParameterValue(std::string("lidar_tracked")));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".scan_topic", rclcpp::ParameterValue(std::string("/scan")));
+  // LidarHumanTrackerSource tuning (docs/lidar_perception-findings.md) - every value here is a
+  // config parameter, not a hardcoded literal, specifically because none of them are validated
+  // against this robot's real, physical LiDAR yet (only the simulated sensor); one launch-arg
+  // change is all a real-hardware calibration pass should ever need. Defaults match
+  // LidarPerceptionParams' own struct defaults (lidar_human_tracker_source.hpp) - declared here
+  // too, not just left as C++ defaults, so `ros2 param list`/launch files can see and override
+  // every one of them the same way every other tunable in this file already can be.
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".lidar_break_distance_m", rclcpp::ParameterValue(0.15));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".lidar_min_cluster_width_m", rclcpp::ParameterValue(0.05));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".lidar_max_cluster_width_m", rclcpp::ParameterValue(0.60));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".lidar_min_cluster_points", rclcpp::ParameterValue(3));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".lidar_gate_distance_m", rclcpp::ParameterValue(0.6));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".lidar_max_track_misses", rclcpp::ParameterValue(5));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".lidar_velocity_smoothing", rclcpp::ParameterValue(0.5));
   // Empty default (not PARAMETER_STRING/required): nav2_params.yaml is loaded as a raw YAML
   // params file with no launch-substitution preprocessing (confirmed against how this
   // project's own launch files pass it to Node(parameters=[...]) - "$(find-pkg-share ...)"
@@ -160,6 +198,24 @@ void CrowdNavController::configure(
     node->get_parameter(plugin_name_ + ".perception_dropout_prob").as_double();
   const int perception_degradation_seed =
     node->get_parameter(plugin_name_ + ".perception_degradation_seed").as_int();
+  const std::string human_source_type =
+    node->get_parameter(plugin_name_ + ".human_source_type").as_string();
+  const std::string scan_topic = node->get_parameter(plugin_name_ + ".scan_topic").as_string();
+  LidarPerceptionParams lidar_params;
+  lidar_params.break_distance_m =
+    node->get_parameter(plugin_name_ + ".lidar_break_distance_m").as_double();
+  lidar_params.min_cluster_width_m =
+    node->get_parameter(plugin_name_ + ".lidar_min_cluster_width_m").as_double();
+  lidar_params.max_cluster_width_m =
+    node->get_parameter(plugin_name_ + ".lidar_max_cluster_width_m").as_double();
+  lidar_params.min_cluster_points =
+    node->get_parameter(plugin_name_ + ".lidar_min_cluster_points").as_int();
+  lidar_params.gate_distance_m =
+    node->get_parameter(plugin_name_ + ".lidar_gate_distance_m").as_double();
+  lidar_params.max_track_misses =
+    node->get_parameter(plugin_name_ + ".lidar_max_track_misses").as_int();
+  lidar_params.velocity_smoothing =
+    node->get_parameter(plugin_name_ + ".lidar_velocity_smoothing").as_double();
   watchdog_window_s_ = node->get_parameter(plugin_name_ + ".watchdog_window_s").as_double();
   debug_inject_decision_delay_s_ =
     node->get_parameter(plugin_name_ + ".debug_inject_decision_delay_s").as_double();
@@ -197,20 +253,41 @@ void CrowdNavController::configure(
   decision_core_ = std::make_unique<ControllerDecisionCore>(
     action_space_config_.time_step_s, watchdog_window_s_);
 
-  // Live perception (S3 Phase 8/S4.7): no noise/dropout/latency by default - this project's
-  // perception-degradation model (Phase 5) is exercised deliberately by Phase 10's noise sweep,
-  // not turned on silently here. FOV/range ARE set here, though (S4.8.1) - unlike noise/dropout,
-  // "what this robot's sensor could ever see" isn't a sweep variable, it's this robot's actual,
-  // fixed physical sensor geometry, so it defaults on rather than off. GroundTruthHumanSource's
-  // production constructor is now templated (fixed Phase 8 - it previously required
-  // rclcpp::Node, which rclcpp_lifecycle::LifecycleNode is not, see docs/phase7-findings.md).
-  DegradationParams perception_params;
-  perception_params.fov_half_angle_rad = perception_fov_half_angle_rad;
-  perception_params.max_range_m = perception_max_range_m;
-  perception_params.dropout_prob = perception_dropout_prob;
-  perception_params.degradation_seed = static_cast<uint64_t>(perception_degradation_seed);
-  human_source_ = std::make_unique<GroundTruthHumanSource>(
-    node, pedestrian_topic, robot_pose_topic, perception_params);
+  // Live perception (S3 Phase 8/S4.7, human_source_type added post-Phase-11 -
+  // docs/lidar_perception-findings.md). Both sources' production constructors are templated
+  // (fixed Phase 8 for GroundTruthHumanSource - it previously required rclcpp::Node, which
+  // rclcpp_lifecycle::LifecycleNode is not, see docs/phase7-findings.md; LidarHumanTrackerSource
+  // built templated from the start for the same reason).
+  if (human_source_type == "ground_truth") {
+    // No noise/dropout/latency by default - this project's perception-degradation model
+    // (Phase 5) is exercised deliberately by Phase 10's noise sweep, not turned on silently
+    // here. FOV/range ARE set here, though (S4.8.1) - unlike noise/dropout, "what this robot's
+    // sensor could ever see" isn't a sweep variable, it's this robot's actual, fixed physical
+    // sensor geometry, so it defaults on rather than off.
+    DegradationParams perception_params;
+    perception_params.fov_half_angle_rad = perception_fov_half_angle_rad;
+    perception_params.max_range_m = perception_max_range_m;
+    perception_params.dropout_prob = perception_dropout_prob;
+    perception_params.degradation_seed = static_cast<uint64_t>(perception_degradation_seed);
+    human_source_ = std::make_unique<GroundTruthHumanSource>(
+      node, pedestrian_topic, robot_pose_topic, perception_params);
+  } else if (human_source_type == "lidar_tracked") {
+    // tf_ is the exact same tf2_ros::Buffer Nav2 itself passed into this plugin's own
+    // configure() (member assignment two lines above the top of this function) - not a second,
+    // independently-constructed buffer - see LidarHumanTrackerSource's own class comment for why
+    // sharing it (rather than building a second TF listener) is what makes the map/world
+    // frame-mismatch bug class (docs/audit.md S1.3) structurally impossible here, not just fixed
+    // for one instance of it.
+    human_source_ = std::make_unique<LidarHumanTrackerSource>(
+      node, scan_topic, tf_, lidar_params);
+  } else {
+    RCLCPP_FATAL(
+      logger_,
+      "CrowdNavController '%s': unknown human_source_type '%s' (expected 'ground_truth' or "
+      "'lidar_tracked')",
+      plugin_name_.c_str(), human_source_type.c_str());
+    throw std::runtime_error("CrowdNavController: unknown human_source_type " + human_source_type);
+  }
 
   // Safety supervisor (S3 Phase 9, S4.8) - a plain class instantiated here, not a second ROS
   // node; forward_sim_dt_s reuses action_space_config_.time_step_s and max_commanded_speed_mps

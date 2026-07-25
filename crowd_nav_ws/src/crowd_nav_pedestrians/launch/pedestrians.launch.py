@@ -1,10 +1,15 @@
 """Phase 4 pedestrian simulation bringup (IMPLEMENTATION_PLAN.md S1.2/S3). Always launches the
 deterministic pedestrian_sim_node.py plus a bridge for the robot's ground-truth pose (needed by
-'reactive' mode regardless of mirroring). The visual-only Gazebo actor mirror is
-launch-toggleable via mirror_enabled, off by default - see docs/phase4-findings.md and S5 risk
-#6 of the plan for why a disabled-by-default mirror is the right default (it's cosmetic, not
-correctness-critical, and every RTF/headless-correctness measurement in this phase's done-bar
-needs to be taken with it off)."""
+'reactive' mode regardless of mirroring).
+
+mirror_enabled now defaults to true (was false through Phase 11) - see
+docs/lidar_perception-findings.md. It no longer just spawns a cosmetic visual marker; it spawns
+a real collidable Gazebo body per pedestrian, which is what makes LidarHumanTrackerSource (the
+default HumanStateSource as of this change, crowd_nav_controller's human_source_type) able to
+perceive anything at all in simulation - without a physical body, the robot's own /scan has
+nothing to detect and the whole point of not cheating via ground truth is moot. Still
+launch-toggleable to false for anyone who specifically wants the old cosmetic-free/ground-truth
+comparison configuration (e.g. re-running a Phase 10-era measurement for direct comparison)."""
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
@@ -18,6 +23,7 @@ def generate_launch_description():
     num_pedestrians = LaunchConfiguration('num_pedestrians')
     max_speed = LaunchConfiguration('max_speed')
     mirror_enabled = LaunchConfiguration('mirror_enabled')
+    mirror_update_divisor = LaunchConfiguration('mirror_update_divisor')
     world_name = LaunchConfiguration('world_name')
 
     # PosePublisher's publish_model_pose (crowd_nav_description/urdf/nvis_3302ard.xacro) never
@@ -68,8 +74,8 @@ def generate_launch_description():
         }],
     )
 
-    # Mirror-only: service bridges for spawning/moving visual markers, and the mirror node
-    # itself. Both conditional on mirror_enabled - never active by default.
+    # Service bridges for spawning/moving pedestrian bodies, and the node that owns them - both
+    # conditional on mirror_enabled, which now defaults to true (see module docstring).
     mirror_service_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -90,6 +96,7 @@ def generate_launch_description():
         parameters=[{
             'use_sim_time': True,
             'num_pedestrians': num_pedestrians,
+            'mirror_update_divisor': mirror_update_divisor,
         }],
         condition=IfCondition(mirror_enabled),
     )
@@ -104,7 +111,13 @@ def generate_launch_description():
         # scenario deliberately above SafetySupervisorConfig::max_train_speed_mps (1.5 m/s
         # default), since the node's own 1.0 m/s default can never exceed that threshold.
         DeclareLaunchArgument('max_speed', default_value='1.0'),
-        DeclareLaunchArgument('mirror_enabled', default_value='false'),
+        DeclareLaunchArgument('mirror_enabled', default_value='true'),
+        # Marker pose-update rate divisor (actor_mirror_node.py) - the sim publishes pedestrian
+        # positions at 20 Hz; sending a SetEntityPose call per pedestrian on every single message
+        # floods Gazebo's set_pose service well past what it can drain alongside physics/
+        # rendering/the full Nav2 stack, observed live as marker blinking/freezing. Default 4 =>
+        # ~5 Hz marker updates, still visually smooth, a quarter of the request rate.
+        DeclareLaunchArgument('mirror_update_divisor', default_value='4'),
         # Gazebo world name (the SDF <world name="..."> value), NOT the world_file .sdf filename
         # used by spawn_robot.launch.py - the two aren't the same string and there's no existing
         # mapping between them, so callers (run_episode.py) pass both explicitly.
