@@ -10,53 +10,59 @@ project, not because the method wins outright. It doesn't, on every metric. That
 
 ## Results: what the safety supervisor actually does, and where its limits are
 
+**These results were corrected after a hard adversarial audit found a critical bug** (a
+coordinate-frame mismatch that silently fed the policy — not just the supervisor — human
+positions offset by several meters from their real location, for the entire time this project
+ran any live Gazebo episode; `docs/audit.md` §1.3). The full 142-episode matrix was re-run
+against the fix, and the collision-rate result below is the corrected one — it is **not** the
+result an earlier version of this project reported, and that reversal is stated plainly, not
+smoothed over: see `docs/phase10-findings.md`'s "CORRECTION" section for the full before/after
+comparison and mechanism.
+
 Three results, run together, describe one underlying pattern rather than three separate ones:
-**the supervisor's reliability tracks how well-characterized the hazard is, not just whether
-it's dangerous.**
+**the safety supervisor takes a raw learned policy that is measurably less safe than a
+classical baseline under real conditions, and restores it to match the classical baseline —
+while remaining perfect against a static hazard and honest about where its own margin runs out.**
 
 - **Against a static, exactly-known hazard, the mechanism is perfect.** A permanent
   keep-out-zone scenario (`depot_keepout_block`) shows the three configs behaving exactly as
   hypothesized: the stock MPPI baseline routes a 6.4 m detour around the zone via Nav2's own
   costmap planner; the unsupervised policy (`policy_raw`) drives straight into it after half a
   meter, exactly as expected from a policy with no concept of a static keep-out region; and the
-  supervised policy's forward-sim check correctly rejects the identical unsafe approach **425
-  times out of 425** — zero violations — but has no way to route around the obstruction the way
+  supervised policy's forward-sim check correctly rejects the identical unsafe approach **439
+  times out of 439** — zero violations — but has no way to route around the obstruction the way
   the planner does, so it gets stuck and times out rather than either violating or succeeding.
   That's the cleanest possible demonstration of what a bounded safety check actually buys you:
   a deterministic, correct refusal, with no fallback smarter than refusal itself.
-- **Against fast, dynamic hazards, the same mechanism has a real, derivable margin limit.**
+- **Against fast, dynamic hazards, the supervisor closes a real safety gap the raw policy has.**
   Under the fairest comparison in the matrix (reactive pedestrians, who actively avoid the
-  robot), the supervised policy has a **higher** collision rate than both the unsupervised
-  policy and the MPPI baseline, in both scenario families (25%/50% vs 12%/12%). Every one of
-  those collisions had a real intervention logged beforehand — the supervisor was engaged, not
-  inert — and a timing breakdown rules out the obvious story ("the stop itself creates new
-  risk"): only 2 of 6 collisions happen within a tenth of a second of an intervention; the other
-  4 happen 1.6–8.1 seconds after the supervisor last found anything to reject, via a separate,
-  unflagged approach. The better-supported explanation: the OOD proximity threshold and the
-  forward-sim's lookahead window are both values inherited from the reference policy's own
-  training configuration (`discomfort_dist=0.2`/`radii=0.3` from CrowdNav's `env.config`; the
-  1.0 s lookahead from the checkpoint's own `time_step_s`), never re-tuned against this robot's
-  actual depot dynamics — a margin sized for the training distribution's encounter geometry
-  isn't guaranteed to cover a reactive pedestrian closing distance faster than that distribution
-  ever produced. Same root cause as the FOV/radius mismatches found in Phases 8–9: parameters
-  inherited from a reference implementation whose operating conditions differ from this one.
+  robot), the *raw*, unsupervised policy has a **higher** collision rate than the classical MPPI
+  baseline (50% vs 12%, in both scenario families) — an honest, unflattering measurement of an
+  imitation-learning-only checkpoint driven through an untuned holonomic-to-diff-drive
+  conversion. The supervised policy closes essentially all of that gap: 12% collision rate in
+  both families, matching the classical baseline exactly. Two of sixteen reactive-mode
+  supervised episodes still collide; both are caught by the supervisor within a quarter of a
+  second of contact — a narrow, last-instant margin limit, not a broad detection gap. The
+  residual points at the same underlying cause as the FOV/radius mismatches found in Phases
+  8–9: the OOD proximity threshold and the forward-sim's lookahead window are both values
+  inherited from the reference policy's own training configuration, never re-tuned against this
+  robot's actual depot dynamics.
 - **Under degraded perception, the effect saturates rather than compensating.** A 5-point
-  perception-dropout sweep found a sharp, reproducible cliff between `dropout_prob` 0.1 and 0.2
-  (success collapses from 7/8 to 0/8, outcomes flip to timeout). Rate-normalized intervention
-  counts (not raw per-episode counts, which are confounded by a fixed 120 s timeout ceiling)
-  show the intervention rate goes essentially flat from 0.1 through 0.5, even though the
+  perception-dropout sweep found a sharp, reproducible cliff between `dropout_prob` 0.0 and 0.1
+  (intervention rate roughly triples), then goes essentially flat through 0.5, even though the
   underlying probability of losing track of a human keeps climbing steeply across that range.
   If the supervisor were compensating harder for worse perception, that rate should climb with
   it. It doesn't: the policy is already as confused as it gets past roughly 0.1, and the
   supervisor doesn't get better at catching a policy that's already lost — it just keeps
   rejecting the same confused output.
 
-Full evidence chain, including two significant harness bugs found and fixed mid-phase (a Gazebo
-plugin that had silently killed ground-truth pose since Phase 4, retroactively invalidating
-Phase 9's own FOV-filter claim; and a coordinate-frame bug that made the keep-out scenario's
-first run look like a supervisor defect when the supervisor was never the problem — see
-`docs/phase10-findings.md` for why that distinction matters and how it was actually confirmed):
-**`docs/phase10-findings.md`**.
+Full evidence chain, including the two significant harness bugs found and fixed mid-phase (a
+Gazebo plugin that had silently killed ground-truth pose since Phase 4; a coordinate-frame bug
+that made the keep-out scenario's first run look like a supervisor defect when the supervisor
+was never the problem) and the later hard-audit correction above: **`docs/phase10-findings.md`**
+(evaluation detail) and **`docs/audit.md`** (the audit that found the frame bug and the
+OOD-reachability gap). A complete, interview-grade account of the whole project, including this
+correction, is in **`explanation.pdf`**.
 
 ## `PolicyAdapter`: one real implementation, a deliberately defended seam
 

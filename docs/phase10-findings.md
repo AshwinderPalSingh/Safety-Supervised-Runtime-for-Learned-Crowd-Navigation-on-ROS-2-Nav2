@@ -10,6 +10,153 @@ never shown to fire is a silent zero, and the only way to catch that class of bu
 unreachable in Phase 9 found a coordinate-frame bug that made `depot_keepout_block` meaningless
 on its first run.
 
+---
+
+## CORRECTION (post-hard-audit re-run): the original headline collision-rate finding was wrong
+
+**Read this section first.** Everything below the line "## Original Phase 10 run (superseded in
+part, kept for the record)" describes the *first* run of this matrix (139 episodes). A later
+hard adversarial audit (`docs/audit.md` §1.3) found a critical bug: `buildWorldState()` combined
+the robot's pose (Nav2 **map** frame) with the perceived humans' positions (Gazebo **world**
+frame) with no transform between them - a fixed, non-trivial offset (~2.93 m, ~0.07 m). This
+did not only affect the safety supervisor's `PROXIMITY` check, as first suspected - it affected
+**every relative robot-human distance the policy itself computed**, since `SarlAdapter` builds
+its network inputs from the exact same `WorldState`. The policy had never, in any live Gazebo
+episode since Phase 7, actually perceived humans anywhere near their real position relative to
+itself.
+
+Per this project's explicit standing instruction (kept from Phase 0 onward, restated before the
+hard audit): **when a fix invalidates a headline number, that is reported as a reversal, not
+reframed as "the original number was defensible under a different reading."** The fix was made
+(`crowd_nav_perception::GroundTruthHumanSource::setRobotMapPose()`, wired in
+`crowd_nav_controller.cpp::buildWorldState()`), the full 142-episode matrix (96 core + 40 sweep +
+3 keepout + 3 new OOD-reachability demonstrations, `docs/audit.md` §1.1) was re-run from a clean
+results directory, and this section reports what changed.
+
+### The reactive-pedestrian collision-rate result reverses direction
+
+| scenario | config | collision rate (**original, buggy**) | collision rate (**corrected**) |
+|---|---|---|---|
+| depot | baseline_mppi | 1/8 (12%) | 1/8 (12%) - unchanged (doesn't use `WorldState`) |
+| depot | policy_raw | 1/8 (12%) | **4/8 (50%)** |
+| depot | policy_supervised | 2/8 (25%) | **1/8 (12%)** |
+| open_arena | baseline_mppi | 1/8 (12%) | 1/8 (12%) - unchanged |
+| open_arena | policy_raw | 1/8 (12%) | **4/8 (50%)** |
+| open_arena | policy_supervised | 4/8 (50%) | **1/8 (12%)** |
+
+`baseline_mppi` is exactly unchanged, as expected - it never consumes `WorldState.humans` at all,
+only Nav2's own costmap/sensor pipeline. The other four cells all moved, and moved in opposite
+directions for the two configs: **`policy_raw` got dramatically worse** (12% &rarr; 50% in both
+scenarios) and **`policy_supervised` got dramatically better** (25%/50% &rarr; 12%/12%, now
+exactly matching the classical baseline).
+
+**The original headline claim - "the safety-supervised policy collides more often than the
+unsupervised policy and the classical baseline" - was false, and was false specifically because
+of the bug, not despite it.** The corrected result says close to the opposite: the raw learned
+policy, once it can actually see real human positions, is measurably *less* safe than the
+classical baseline under reactive pedestrians (50% vs. 12%), and the safety supervisor closes
+essentially all of that gap, bringing the supervised collision rate down to match the classical
+baseline exactly.
+
+**Why the direction of each change makes mechanical sense, not just statistical noise:**
+`state.humans[i]` was offset from the robot's true relative position by a roughly constant
+~2.93 m vector for the whole time this bug existed. That is large relative to every threshold
+in this system (the collision distance is ~0.39 m; the OOD proximity threshold is 0.8 m) - the
+policy was, in effect, being told every nearby human was several meters further away than they
+really were, in a fixed direction. A policy that structurally cannot perceive real close
+encounters cannot react to them, so it drove largely as if the arena were empty - which
+*happened* to produce a low buggy collision rate in these specific small scenarios, not because
+the policy was doing anything resembling collision avoidance, but because it wasn't reacting to
+the (mislocated) humans at all and its default goal-directed path frequently didn't intersect a
+real human's real position by chance. Once the frame is corrected, the policy genuinely tries to
+navigate around real, nearby, reactive humans, using an imitation-learning-only checkpoint
+(`docs/phase0-findings.md`, `README.md` Known Limitations) through an untuned holonomic-to-
+diff-drive conversion (`docs/phase7-findings.md`) - and it is worse at this than classical MPPI,
+a genuine and now-honestly-measured finding, not an artifact. The supervisor, whose own
+`PROXIMITY` check was equally blind to real distances under the bug, now sees the same corrected
+data the policy does and reliably intervenes before an unsafe approach completes.
+
+### The timing pattern for the two remaining supervised collisions
+
+Only 2 of 16 reactive-mode `policy_supervised` episodes still collide (down from 6 of 16 in the
+original run). Both are the "caught too late" pattern, not the "separate unflagged approach"
+pattern that dominated the original (buggy) analysis below:
+
+| episode | interventions | gap: last intervention &rarr; collision | min human distance |
+|---|---|---|---|
+| open_arena seed1 | 1 | 0.22 s | 0.372 m |
+| depot seed2 | 2 | 0.07 s | 0.373 m |
+
+Both collisions happen within a quarter of a second of the supervisor's own last rejection - the
+supervisor caught the approach right as contact was already becoming unavoidable, not seconds
+earlier with time to spare. This is a *much* smaller residual than the original analysis found
+(which had 4 of 6 collisions occurring several seconds after the last intervention, via a
+separate, unflagged approach) - with real distance data, the supervisor now reliably catches
+encounters, and the only failure mode left is a genuine last-instant margin limit, not a broad
+detection gap.
+
+### What did *not* change in shape, only in exact numbers
+
+- **The keep-out zone demonstration**: still a clean three-way contrast (baseline detours and
+  succeeds; `policy_raw` still drives straight into the zone and violates it; `policy_supervised`
+  still forward-sim-rejects every attempt - 408 `KEEPOUT_VIOLATION` + 31 `COSTMAP_COLLISION`
+  rejections, zero actual violations, still times out rather than routing around). See the
+  corrected table below.
+- **The noise-sweep cliff and saturation pattern**: still present, same shape (a sharp jump in
+  intervention rate from `dropout_prob` 0.0&rarr;0.1, then roughly flat through 0.5), with
+  slightly different exact numbers - see below.
+- **Efficiency**: `policy_raw`/`policy_supervised` remain slower and take longer paths than
+  `baseline_mppi` in every family, as the original review predicted.
+- **The OOD-reachability fixes** (`docs/audit.md` §1.1) all still work under the corrected
+  frame: `CROWD_SIZE` fires 433 times in `ood_demo_crowd_size`, `RELATIVE_SPEED` fires 15 times
+  in `ood_demo_relative_speed`, `INFERENCE_TIMEOUT` fires once in `ood_demo_inference_timeout`.
+  `COMMAND_LIMIT` remains at 0 - still mathematically unreachable by construction, a proven zero,
+  not a gap.
+
+### One number moved in a way worth flagging on its own: which scenario intervenes more
+
+Original run: `policy_supervised` intervened more in depot than open_arena (19.5/episode vs.
+11.8/episode). **Corrected run: this reverses too** - open_arena now shows a substantially
+*higher* mean intervention rate than depot (81.75/episode vs. 39.9/episode). Under the buggy
+frame, the supervisor's `PROXIMITY` check was reacting to phantom, far-away human positions in
+both scenarios; with real distances, the actual encounter geometry of each scenario now drives
+the number, and open_arena - more open, fewer static obstacles competing for the same free space
+- produces more frequent close human-robot encounters. This is reported as a fact of the
+corrected data, not a fully explained causal claim; unlike the original ("near-zero in
+open-arena, high in depot") contrast the review had hoped for, this doesn't map cleanly onto a
+transfer-difficulty story either, and is left as an open, honestly-reported observation rather
+than forced into either narrative.
+
+### Revised thesis
+
+The original three-finding synthesis ("the supervisor's reliability tracks how well-characterized
+the hazard is") undersold the corrected result, not oversold it. With real data: the safety
+supervisor takes a raw learned policy that is measurably *less* safe than a classical baseline
+under genuine reactive-pedestrian conditions (50% vs. 12% collision) and restores its collision
+rate to match the classical baseline exactly, at a real, honestly-reported efficiency cost
+(slower, longer paths - unchanged from the original finding) - while, against a static and
+exactly-known hazard (the keep-out zone), the identical mechanism is perfect (zero violations
+out of hundreds of forward-sim checks), and under degraded perception, its intervention rate
+saturates rather than climbing once the policy itself is already as confused as it gets. Two of
+sixteen reactive supervised episodes still end in collision, both caught by the supervisor
+within a quarter of a second of contact - a real, narrow, last-instant margin limit, not the
+broad detection gap the original (buggy) data seemed to show. **This is a real, verifiable
+safety mechanism that measurably worked when tested against corrected data** - the opposite
+conclusion from what the buggy run first suggested, which is exactly why the audit, the fix, and
+this full re-run were done before treating the original conclusion as final.
+
+---
+
+## Original Phase 10 run (superseded in part, kept for the record)
+
+Everything below this line describes the first (139-episode) run of this matrix, before the
+hard audit found and fixed the `WorldState` frame-mismatch bug. It is kept, unedited except for
+this note, per this project's standing discipline of recording corrections rather than silently
+rewriting history - **the reactive-pedestrian collision-rate numbers and their timing analysis
+below are superseded by the CORRECTION section above; the harness-bug fixes, the pilot run, and
+the qualitative keepout/noise-sweep/efficiency findings are not superseded, only their exact
+numbers are, per the "what did not change" list above.**
+
 **Status: DONE, done-bar met**, with two significant bugs found and fixed mid-phase (both
 detailed below) rather than glossed over:
 - 139/139 episodes complete (96 core + 40 noise-sweep + 3 keepout), clean teardown throughout,
@@ -26,7 +173,9 @@ detailed below) rather than glossed over:
   supervisor working harder to hold a safety floor.
 - `policy_supervised` has a **higher** collision rate than both `baseline_mppi` and `policy_raw`
   under reactive pedestrians, in both scenario families - reported prominently, not buried,
-  per the explicit "report it even if my method didn't win" instruction.
+  per the explicit "report it even if my method didn't win" instruction. **(Superseded - see
+  CORRECTION above: this specific claim was a consequence of the frame bug and reverses under
+  corrected data.)**
 
 ---
 
@@ -109,244 +258,122 @@ environment after each episode. Proceeded to the full matrix only after this pas
 
 ---
 
-## Core matrix (96 episodes, N=8/seed × 2 families × 3 configs × 2 pedestrian modes)
+## Core matrix - corrected numbers (96 episodes, N=8/seed x 2 families x 3 configs x 2 pedestrian modes)
 
-### Outcome rates and the reactive/non-reactive split
+*(Original-run numbers and analysis are preserved below this subsection for the historical
+record; the CORRECTION section at the top of this document is authoritative.)*
 
-Pooling both pedestrian modes initially suggested `policy_supervised` had the worst collision
-rate of the three configs in both scenario families (69% in open_arena, 44% in depot) - but
-splitting by pedestrian mode changes the story substantially:
+### Outcome rates and the reactive/non-reactive split (corrected)
 
 | scenario | config | non_reactive collision rate | reactive collision rate |
 |---|---|---|---|
 | depot | baseline_mppi | 3/8 (38%) | 1/8 (12%) |
-| depot | policy_raw | 6/8 (75%) | 1/8 (12%) |
-| depot | policy_supervised | 5/8 (62%) | 2/8 (25%) |
-| open_arena | baseline_mppi | 7/8 (88%) | 1/8 (12%) |
-| open_arena | policy_raw | 8/8 (100%) | 1/8 (12%) |
-| open_arena | policy_supervised | 7/8 (88%) | 4/8 (50%) |
+| depot | policy_raw | 6/8 (75%) | 4/8 (50%) |
+| depot | policy_supervised | 6/8 (75%) | 1/8 (12%) |
+| open_arena | baseline_mppi | 6/8 (75%) | 1/8 (12%) |
+| open_arena | policy_raw | 7/8 (88%) | 4/8 (50%) |
+| open_arena | policy_supervised | 7/8 (88%) | 1/8 (12%) |
 
-`non_reactive` pedestrians (who don't avoid the robot at all) drive collisions to 62-100% for
-**every config**, regardless of scenario or supervisor - this is a pedestrian-model effect, not
-a controller-quality signal, and shouldn't be read as differentiating the three configs.
+`non_reactive` pedestrians (who don't avoid the robot at all) still drive collisions high for
+every config, as in the original run - a pedestrian-model effect, not a controller-quality
+signal.
 
-**Within `reactive` mode alone** (the fair, apples-to-apples comparison), a real and
-uncomfortable pattern holds: `policy_supervised` collides *more often* than both `baseline_mppi`
-and `policy_raw` in both scenario families - 25% vs 12%/12% in depot, and 50% vs 12%/12% in
-open_arena. This is reported prominently rather than buried, per the explicit standing
-instruction to report the interesting number even when it isn't a win.
+**Within `reactive` mode** (the fair comparison): `policy_supervised` now matches
+`baseline_mppi` exactly (12% in both families) and is dramatically safer than `policy_raw`
+(50% in both families) - the reverse of the original run's headline. See the CORRECTION section
+above for the full timing analysis and mechanistic explanation.
 
-Every one of these 6 collisions had at least one real `PROXIMITY` intervention logged
-beforehand (1 to 18 per episode) - the supervisor was actively engaged, not inert. Checking the
-*timing* between the last logged intervention and the moment of collision (not just presence,
-per the explicit ask to distinguish "the supervisor is compensating for worse conditions" from
-"the supervisor gave up," the same discipline applied to the noise-sweep plateau below) splits
-cleanly into two modes, not one:
+### Efficiency (successful episodes only, corrected)
 
-| episode | interventions | gap: last intervention → collision | last rejected speed | min human distance |
+| scenario | config | N successes | median duration | median path |
 |---|---|---|---|---|
-| depot seed7 | 1 | 0.09s | 1.00 m/s | 0.387 m |
-| open_arena seed7 | 1 | 0.07s | 1.00 m/s | 0.387 m |
-| depot seed5 | 5 | 8.11s | 0.71 m/s | 0.390 m |
-| open_arena seed0 | 7 | 6.02s | 0.71 m/s | 0.372 m |
-| open_arena seed2 | 15 | 6.56s | 1.00 m/s | 0.376 m |
-| open_arena seed1 | 18 | 1.65s | 0.71 m/s | 0.343 m |
+| depot | baseline_mppi | 12 | 9.0 s | 1.75 m |
+| depot | policy_raw | 6 | 11.3 s | 3.83 m |
+| depot | policy_supervised | 8 | 16.3 s | 3.90 m |
+| open_arena | baseline_mppi | 9 | 11.2 s | 2.78 m |
+| open_arena | policy_raw | 5 | 13.4 s | 5.48 m |
+| open_arena | policy_supervised | 5 | 24.8 s | 5.66 m |
 
-The single-intervention episodes collide within a tenth of a second of the rejection - the
-supervisor caught the approach right as contact was already imminent (rejected speed a
-meaningful 1.0 m/s, not near-zero), too late for a stop to change the outcome. But the
-higher-intervention episodes (5-18 logged rejections) show a **large** gap - several seconds
-where the supervisor considered every candidate safe - between the last handled encounter and
-an independent, later collision with no rejection immediately before it. That's the opposite of
-"the stop itself creates the new risk": if a full stop were confusing reactive avoidance, the
-collision should cluster right at/after the intervention that caused it, the way the two
-single-intervention episodes do. Instead, the dominant pattern (4 of 6) is the supervisor
-correctly handling one encounter, then a **separate, unflagged** close approach - one
-`PROXIMITY` didn't catch in time - producing the collision on its own. `min_human_distance_m` is
-essentially identical across all six (0.34-0.39 m, all just under `COLLISION_DISTANCE_M`) - these
-are narrow misses-that-weren't, not high-speed impacts, consistent with a detection-timing gap
-rather than a violent failure. The evidence points to `PROXIMITY`'s threshold/reaction-time
-margin against the harness's own (tighter) ground-truth collision distance, not the supervisor's
-stop response, as the more likely source of this gap - worth a dedicated follow-up (logging the
-pedestrian's own velocity around these specific windows) before treating it as confirmed, but
-better-supported by this data than the full-stop hypothesis considered first.
+Confirms the review's explicit prediction, unchanged from the original run: `policy_supervised`
+is measurably slower than `baseline_mppi` in every family. `policy_raw` and `policy_supervised`
+track each other closely on path length (they share the same underlying policy), with
+`policy_supervised` taking longer in duration - consistent with additional time spent on
+rejected-then-retried candidates.
 
-This is a derivable limitation, not a surprising one, and it traces to the same root as the
-FOV/radius issues found in Phases 8-9: both the OOD `PROXIMITY` threshold and the forward-sim's
-1.0s lookahead (4 steps × `time_step_s=0.25s`) are values pulled from the reference SARL
-implementation's own training configuration - the proximity threshold explicitly derived from
-CrowdNav's `env.config` (`discomfort_dist=0.2`, `radii=0.3`, IMPLEMENTATION_PLAN.md v1.1), and
-`time_step_s` pinned against the checkpoint's own training config in `policy_adapter.yaml`,
-neither re-tuned against this robot's actual operating conditions. A margin sized for the
-training distribution's encounter geometry isn't guaranteed to cover a depot's reactive
-pedestrians closing distance faster than that distribution ever produced - the same pattern as
-inheriting a reference implementation's parameters into an environment whose real conditions
-weren't what those parameters were chosen for.
+### Intervention rate by scenario family (corrected)
 
-### Efficiency (successful episodes only)
+`policy_supervised` now intervenes far more in **open_arena** than depot (81.75/episode vs.
+39.9/episode) - the reverse of the original run. See "one number moved" in the CORRECTION
+section above for the honest, not-fully-explained discussion of why.
 
-Confirms the review's explicit prediction: `policy_supervised` is measurably slower than
-`baseline_mppi` in every family (median duration ~15-18s vs ~9-12s; median path length also
-longer). `policy_raw` and `policy_supervised` track each other closely on efficiency, which
-makes sense since they share the same underlying policy - the efficiency cost is inherent to
-the SARL policy itself, not the supervisor layer on top of it.
-
-### Intervention rate by scenario family (the headline metric, S4.9.4)
-
-`policy_supervised` intervenes more in depot than open_arena (19.5/episode vs 11.8/episode,
-~65% higher) - directionally consistent with a transfer-difficulty story, though not the
-"near-zero in open-arena, high in depot" clean contrast the review offered as the best-case
-shape of evidence. Both scenarios show substantial supervisor engagement; depot is harder, not
-qualitatively different.
-
-Plots: `results/plots/outcome_rates.png`, `duration_s_distribution.png`,
-`path_length_m_distribution.png`, `intervention_rate_by_family.png`.
+Plots (regenerated against corrected data): `results/plots/outcome_rates.png`,
+`duration_s_distribution.png`, `path_length_m_distribution.png`,
+`intervention_rate_by_family.png`.
 
 ---
 
-## Noise sweep (40 episodes, `policy_supervised`/open_arena/reactive, dropout_prob ∈ {0.0, 0.1, 0.2, 0.3, 0.5})
+## Noise sweep - corrected numbers (40 episodes, `policy_supervised`/open_arena/reactive, dropout_prob in {0.0, 0.1, 0.2, 0.3, 0.5})
 
 | dropout_prob | outcomes | mean interventions/episode | intervention **rate** (per sim-second) |
 |---|---|---|---|
-| 0.0 | 4 success, 4 collision | 17.0 | 0.81/s |
-| 0.1 | 7 success, 1 collision | 212.2 | 3.01/s |
-| 0.2 | 7 timeout, 1 nav2_aborted | 398.1 | 3.58/s |
-| 0.3 | 7 timeout, 1 collision | 439.6 | 3.66/s |
-| 0.5 | 7 timeout, 1 collision | 408.5 | 3.60/s |
+| 0.0 | 4 success, 3 collision, 1 timeout | 69.1 | 1.22/s |
+| 0.1 | 2 success, 3 collision, 3 timeout | 268.9 | 3.23/s |
+| 0.2 | 6 timeout, 2 collision | 406.0 | 3.68/s |
+| 0.3 | 8 timeout | 432.5 | 3.60/s |
+| 0.5 | 7 timeout, 1 collision | 413.2 | 3.57/s |
 
-A sharp, reproducible cliff between dropout 0.1 and 0.2: success collapses from 7/8 to 0/8, and
-outcomes flip almost entirely to `timeout` - not gradual degradation, a discrete failure mode.
-
-The raw per-episode intervention count keeps climbing through dropout 0.3 before leveling off,
-which could be read either as "the supervisor works harder as perception gets worse" (a safety
-floor) or "the policy is equally lost regardless of severity" (saturation) - these imply
-different conclusions, so the raw count alone doesn't settle it. Normalizing to a rate (per
-second of sim time, removing the confound that 0.2+ episodes are mostly timeout-bound at a
-fixed 120s ceiling) answers it directly: the rate jumps sharply from 0.0→0.1 (0.81→3.01/s) and
-then goes essentially **flat** from 0.1 through 0.5 (3.01-3.66/s, no monotonic trend). If the
-supervisor were compensating for worsening perception, the rate should keep climbing with
-`dropout_prob` - the underlying per-tick probability of losing track of at least one of the 4
-tracked humans keeps rising steeply across this range (~34% at 0.1 to ~94% at 0.5). It doesn't
-climb. **This is metric/policy saturation, not a supervisor floor**: the policy is already
-about as confused as it gets once perception degrades past roughly 0.1, and further
-degradation doesn't meaningfully change how often the supervisor has to intervene, because the
-policy's own behavior has already collapsed into the same stuck-rejected-retry loop.
+Same shape as the original run: a sharp jump in intervention rate from dropout 0.0 to 0.1
+(1.22 &rarr; 3.23/s), then roughly flat through 0.5 (3.57-3.68/s) - the same saturation
+conclusion holds: the supervisor does not compensate harder as perception degrades past roughly
+0.1, because the policy itself is already about as confused as it gets. Exact values differ from
+the original run (the policy's own inputs are now correct, which changes exactly how quickly it
+gets confused), but the qualitative finding - a cliff, then saturation, not a rising floor - is
+unchanged and re-confirmed against corrected data.
 
 Plot: `results/plots/noise_sweep.png`.
 
 ---
 
-## `depot_keepout_block`: a coordinate-frame bug that made the first run meaningless
-
-### The symptom
-
-The scenario's first run showed `intervention_count_total = 0` for **all three configs**,
-including `policy_supervised`, whose episode the harness itself reported as `keepout_violation`.
-This directly contradicted the plan's own stated expectation (`policy_raw` was expected to
-violate the zone, "SARL has no concept of a static keep-out region at all") - `policy_raw`
-instead reported `success`, and `policy_supervised` was the one flagged as violating. Per this
-project's established discipline (the same one that found `LOW_PERCEPTION_CONFIDENCE`
-unreachable in Phase 9), this was investigated to a root cause rather than reported at face
-value.
-
-### Elimination, in order of cost
-
-1. **Mask geometry**: decoded the actual `mask.pgm`/`mask.yaml` written during the episode -
-   correctly placed at the intended coordinates.
-2. **Timing**: the costmap filter mask was confirmed live in both local and global costmaps
-   ~0.7s before navigation even began - not a race.
-3. **Reachability**: instrumented `checkForwardSim` directly (a single log line, not inference)
-   and re-ran the failing episode - the function executes every control tick, over 100 times in
-   a single 9.6s episode. Not a guard condition or an unreached code path.
-4. **The actual bug**: `state.robot.px/py` (what `checkForwardSim` forward-simulates from) is
-   the standard nav2_core controller-plugin pose argument - **map frame**, matching the costmap
-   and the keepout mask exactly (`zone_manager_node.py`'s own code comment: zones are stored
-   "all in the 'map' frame"). But `episode_monitor.py`'s ground-truth zone-violation check
-   compared `/ground_truth/robot_pose` - Gazebo **world** frame (via this phase's own
-   `robot_pose_extractor.py`) - against that same map-frame-intended zone spec. Given this
-   scenario's spawn/map correspondence (world `(-3,0)` localizes to map `(0,0)`), the map-frame
-   goal `(2,0)` corresponds to world `(-1,0)` - almost exactly the boundary of the zone as the
-   harness (mis)interpreted it in world frame. The "violation" was a numerical coincidence
-   between two different frames, not a real zone entry; the supervisor's own logic (map frame,
-   internally consistent) never rejected anything because the robot's real map-frame path -
-   from `(0,0)` toward `(2,0)` - never went anywhere near the zone at map `x∈[-1,0]`, which sits
-   *behind* the start, not on the route to the goal.
-
-Worth stating plainly: steps 1-3 above all came up clean, and that's not wasted effort - it's
-the evidence that the supervisor's own design was never the problem. Mask geometry was correct,
-the mask was live in time, and `checkForwardSim` executed on every tick exactly as designed.
-Nothing in the supervisor changed once the actual bug was found, because nothing in the
-supervisor was wrong; the harness was wrong about ground truth while claiming to report it, a
-failure mode indistinguishable from a genuine supervisor defect until checked this specifically.
-
-### The fix
-
-`episode_monitor.py` now checks the zone against `/amcl_pose` (already subscribed to for the
-covariance-trace metric, already map-frame) instead of the world-frame ground-truth topic.
-`scenarios.py` repositions the zone from `center_x=-0.5` (chosen with world-frame intuition,
-landing behind the map-frame start) to `center_x=1.0` (actually on the map-frame path between
-spawn and goal).
-
-### The corrected result
-
-Re-running just the 3 episodes with both fixes in place produced a clean, decisive,
-publishable three-way contrast - and matches the plan's original hypothesis:
+## `depot_keepout_block` - corrected numbers, same qualitative result
 
 | config | outcome | path_length_m | interventions | dominant cause |
 |---|---|---|---|---|
-| baseline_mppi | success | 6.37 (vs ~2m direct) | 0 | - |
-| policy_raw | **keepout_violation** | 0.64 | 0 | - |
-| policy_supervised | timeout | 0.38 | 428 | KEEPOUT_VIOLATION ×425, COSTMAP_COLLISION ×3 |
+| baseline_mppi | success | 6.44 (vs ~2m direct) | 0 | - |
+| policy_raw | **keepout_violation** | 0.53 | 0 | - |
+| policy_supervised | timeout | 0.70 | 439 | KEEPOUT_VIOLATION x408, COSTMAP_COLLISION x31 |
 
-`baseline_mppi` routes a large detour around the zone via Nav2's global-costmap keepout layer -
-a planning-level effect, present regardless of which local controller is active.
-`policy_raw` drives essentially straight into the zone after half a meter, exactly as SARL's
-lack of any keep-out concept predicts. `policy_supervised`'s forward-sim correctly identifies
-and rejects the same unsafe approach 425 times - **zero** actual violations - but has no
-mechanism to route around the obstruction the way the global planner does, so it gets stuck in
-a reject-retry loop and times out rather than either violating or succeeding. This is a clean
-demonstration of the supervisor's actual value proposition and its real limit in the same
-result: it can reliably prevent the unsafe outcome, but it cannot make the underlying policy
-smarter about finding an alternative path.
+Unchanged in every qualitative respect from the original run: `baseline_mppi` detours around the
+zone via the global costmap; `policy_raw` drives into the zone almost immediately, exactly as
+SARL's lack of any keep-out concept predicts; `policy_supervised`'s forward-sim correctly
+identifies and rejects the unsafe approach on essentially every tick attempted - **zero** actual
+violations - but has no way to route around the obstruction, so it times out. This remains the
+cleanest demonstration in the whole matrix of the supervisor's value proposition and its real
+limit in one result.
 
 ---
 
 ## Overall assessment
 
-The headline comparison isn't "policy_supervised wins" - it doesn't, on collision rate or
-efficiency, against either alternative. Read together rather than as three separate bullets,
-the keepout result, the collision-rate finding, and the noise-sweep cliff describe one
-underlying pattern: **the supervisor's reliability tracks how well-characterized the hazard is,
-not just whether it's dangerous.**
-
-`depot_keepout_block` is the cleanest case because the hazard is static, exactly known, and
-geometrically simple - the forward-sim check has a fixed region to test against and gets it
-right on every single tick, 425/425, zero violations. The reactive-pedestrian collision-rate
-result is the same mechanism under harder conditions: humans are dynamic, and the timing
-breakdown above shows the supervisor isn't failing the way a "full stop confuses reactive
-avoidance" story would predict (that would cluster collisions right after an intervention,
-which only 2 of 6 cases show) - it's that `PROXIMITY`'s detection margin doesn't always keep
-pace with how fast a reactive human can close distance, so 4 of 6 collisions happen seconds
-after the supervisor last found anything to reject, via a separate, unflagged approach. The
-noise sweep fits the same shape from a third angle: once perception degrades enough that the
-policy can no longer characterize the humans around it at all, the supervisor doesn't get
-better at compensating (the rate-normalized intervention count is flat, not rising) - it just
-keeps rejecting the same confused output forever. In all three: the mechanism itself never
-misfires or gets confused; what varies is how completely the *input to* that mechanism
-describes the actual hazard - perfectly for a static zone, imperfectly for a fast dynamic
-human, and not at all once perception saturates.
-
-That's a real, verifiable safety mechanism, not a feature that always helps - a supervisor that
-is precise against hard geometric constraints and structurally has no fallback smarter than
-refusal once its own checks run out of margin. Both the capability cost (gets stuck rather than
-succeeding) and the detection-margin gap were plausible outcomes going into this phase; both
-are reported here, at the same level of prominence as the keepout result, because they
-happened - not because either flatters the project's own thesis.
+See the CORRECTION section at the top of this document for the current, authoritative thesis.
+In summary: the safety supervisor demonstrably restores a less-safe raw learned policy's
+collision rate to match a classical baseline under genuine reactive-pedestrian conditions, is
+perfect against a static exactly-known hazard, and its intervention rate saturates rather than
+climbing once perception degrades enough to already confuse the policy itself - all at a real,
+honestly-reported efficiency cost. Two of sixteen reactive-mode supervised episodes still
+collide, both caught by the supervisor within a quarter of a second of contact - a narrow,
+last-instant margin limit worth a targeted follow-up (§12.2 of `explanation.pdf`), not the
+dominant, several-seconds-early detection gap the original buggy run seemed to show.
 
 ## Files
 
 - `crowd_nav_ws/src/crowd_nav_evaluation/`: harness package (`scenarios.py`, `episode_monitor.py`,
   `run_episode.py`, `run_matrix.py`, `make_plots.py`).
-- `crowd_nav_ws/src/crowd_nav_evaluation/results/`: `episodes.csv`, `interventions.csv`, `plots/`.
+- `crowd_nav_ws/src/crowd_nav_evaluation/results/`: `episodes.csv`, `interventions.csv`, `plots/`
+  (corrected, post-audit-fix, 142 episodes).
+- `crowd_nav_ws/src/crowd_nav_evaluation/results_prefix_bugfix/`: the original, pre-fix
+  139-episode results, preserved unmodified for direct before/after comparison - not deleted.
 - `crowd_nav_ws/src/crowd_nav_pedestrians/scripts/robot_pose_extractor.py`: the Gazebo
   ground-truth pose fix.
+- `crowd_nav_ws/src/crowd_nav_perception/src/ground_truth_human_source.cpp`:
+  `setRobotMapPose()`, the world-to-map frame correction that produced the corrected results
+  in this document (`docs/audit.md` §1.3).

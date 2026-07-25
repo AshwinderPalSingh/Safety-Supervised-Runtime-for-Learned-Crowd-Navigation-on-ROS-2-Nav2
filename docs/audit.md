@@ -236,6 +236,18 @@ actual trigger behavior, and very likely the intervention-rate numbers and possi
 collision-rate result itself - **episodes affected by this fix will be re-run, and any changed
 headline number will be reported as changed, not reframed.**
 
+**Confirmed outcome, after the fix and the full 142-episode re-run** (`docs/phase10-findings.md`,
+"CORRECTION" section): the collision-rate result did not just change, it reversed direction.
+`policy_raw` (unsupervised) went from 12% to 50% reactive-mode collision rate in both scenario
+families - the frame bug had been making the raw policy *look* safer than it really is, by
+feeding it human positions offset by several meters, which it structurally could not react to.
+`policy_supervised` went from 25%/50% (worse than baseline) to 12%/12% (exactly matching the
+classical baseline) - the frame bug had been making the supervisor's own `PROXIMITY` check
+equally blind, which is exactly the failure mode this finding predicted. This is the single
+largest confirmation in this project that the audit's "don't let a real finding get reframed"
+standard was necessary, not performative: the original headline result was not a defensible
+reading of noisy data, it was a direct artifact of this bug.
+
 ### 1.4 `policy_radius`/`robot_radius` split - verified, holds everywhere
 
 Grepped every file referencing either radius across the workspace. `policy_radius_m=0.3`
