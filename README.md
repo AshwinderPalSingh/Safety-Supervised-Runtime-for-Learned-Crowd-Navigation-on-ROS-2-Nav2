@@ -43,10 +43,6 @@ is perfect against a static hazard, closes a real safety gap against dynamic one
 rather than compensates once its own perception degrades — three honest findings, not one clean
 win.
 
-**Read `explanation.pdf`** for the full interview-grade technical narrative (53 pages: every
-design decision, every bug found and how it was actually verified, a 34-question Q&A appendix).
-This README is the map; that document is the territory.
-
 ## Architecture
 
 <p align="center">
@@ -68,7 +64,7 @@ synchronized copy of it.
 
 The policy, the supervisor, and the fallback controller are three genuinely separate pieces of
 logic sharing one plugin instance — deliberately, so a rejection can never race a fallback call
-into the same controller object (`docs/lessons.md`, §7.4 of `explanation.pdf`).
+into the same controller object (`docs/lessons.md`).
 
 ## Results: what the safety supervisor actually does
 
@@ -102,7 +98,7 @@ own margin runs out.**
 
 Full evidence chain, including two harness bugs found and fixed mid-phase and the hard-audit
 correction above: **`docs/phase10-findings.md`** (evaluation detail), **`docs/audit.md`** (the
-audit itself), **`explanation.pdf`** (complete narrative).
+audit itself).
 
 ## Demo & Screenshots
 
@@ -154,7 +150,7 @@ needed, the syntax is already correct.
 
 Every result above was measured against `GroundTruthHumanSource` — a deliberate isolation tool
 (it separates a policy-logic bug from a perception bug), not a claim about real-robot
-performance, and `docs/phase10-findings.md`/`explanation.pdf` §11.3 say so without softening it.
+performance, and `docs/phase10-findings.md` says so without softening it.
 A second, real implementation now exists and is the default:
 **`LidarHumanTrackerSource`** clusters the robot's own `/scan` returns (adaptive-breakpoint
 clustering with full-circle wraparound handling), tracks clusters frame-to-frame with
@@ -169,7 +165,7 @@ Switch between them with one launch argument — `human_source_type:=ground_trut
 `lidar_tracked` (default) — see [Getting Started](#getting-started). The 142-episode matrix
 above is explicitly pinned to `ground_truth` so the historical results stay reproducible;
 rerunning it against `lidar_tracked` is the single most valuable next measurement
-(`docs/lidar_perception-findings.md`, `explanation.pdf` §12.1) and has not been done yet.
+(`docs/lidar_perception-findings.md`) and has not been done yet.
 
 ## `PolicyAdapter`: one real implementation, a deliberately defended seam
 
@@ -262,7 +258,7 @@ colcon test-result --verbose
 
 ## Known Limitations
 
-Stated deliberately, not discovered as accidents — full detail in `explanation.pdf` §11.
+Stated deliberately, not discovered as accidents.
 
 - **The simulated LiDAR is 180° FOV, not 360°.** A confirmed gz-sim 6.18.0 rendering bug causes
   spurious self-hits across half the scan; masked at the source, at the honest cost of a real
@@ -280,15 +276,15 @@ Stated deliberately, not discovered as accidents — full detail in `explanation
   of its five criteria can tell that an observation was already wrong before any threshold looked
   at it. Three real bugs of exactly that class were found in this project, none of them by tuning
   a threshold — by differential testing and live adversarial verification.
-- **CI has never run on GitHub infrastructure** — this repository has no configured remote. What
-  *is* verified locally: the full unit-test suite and lint gate run clean (91 tests, 0 failures),
-  and the nightly smoke test's own pass/fail logic was verified against both a real episode and a
-  synthetic failing case. What's unverified is the GitHub-Actions-specific provisioning around it.
+- **CI has not yet run on GitHub infrastructure.** What *is* verified locally: the full
+  unit-test suite and lint gate run clean (91 tests, 0 failures), and the nightly smoke test's
+  own pass/fail logic was verified against both a real episode and a synthetic failing case.
+  What's unverified is the GitHub-Actions-specific provisioning around it (Gazebo/Xvfb setup on
+  a fresh runner, dependency caching).
 
 ## Future Work
 
-Ranked by how directly each follows from a finding already in this report — not a wishlist
-(full detail: `explanation.pdf` §12):
+Ranked by how directly each follows from a finding already in this report — not a wishlist:
 
 1. **Re-run the 142-episode matrix against `LidarHumanTrackerSource`** — the single most direct
    next measurement; every current result is ground-truth-only.
@@ -309,7 +305,6 @@ Ranked by how directly each follows from a finding already in this report — no
 
 | Document | What's in it |
 |---|---|
-| **`explanation.pdf`** | Full 53-page interview-grade technical narrative: every design decision, every bug and how it was actually verified, a 34-question Q&A appendix. |
 | **`docs/audit.md`** | The hard adversarial audit that found the coordinate-frame bug and reversed the headline result. |
 | **`docs/phase10-findings.md`** | Full evaluation-matrix detail, including the post-audit CORRECTION section. |
 | **`docs/lidar_perception-findings.md`** | The real, non-ground-truth LiDAR perception pipeline: design, two bugs found and fixed, live verification. |

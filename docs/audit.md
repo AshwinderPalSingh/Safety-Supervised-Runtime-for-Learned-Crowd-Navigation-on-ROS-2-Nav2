@@ -1,6 +1,6 @@
 # Hard adversarial audit
 
-Commissioned after Phase 11 closed the project, before writing `explanation.pdf`. Assume
+Commissioned after Phase 11 closed the project. Assume
 something is wrong and go find it - not a review pass. Findings are tagged by severity
 (critical / significant / minor / cosmetic) and by disposition (fixed / deferred / won't-fix,
 with reasoning). Per explicit standing instruction: if a finding invalidates a headline number,
@@ -25,12 +25,12 @@ This document is written incrementally as the audit proceeds, not compiled after
 | §4 | Documentation drift | none | Spot-checked, none found |
 | §5 | Code quality | none | None found at reasonable-depth pass |
 | §6 | Post-fix re-run integrity: is the 142-episode result a single clean pass or stitched with an aborted partial run? | none | Confirmed clean, 3 independent checks; no re-run needed |
-| §7 | Narrative reconciliation: does every interpretive claim about Phase 10 still match the corrected CSVs? | SIGNIFICANT | 1 claim reversed (headline collision-rate finding + its timing explanation), 1 claim corrected in scope (noise-sweep cliff location), 1 explanation removed (the 4-of-6 detection-margin story); all fixed across `docs/phase10-findings.md`, `README.md`, `IMPLEMENTATION_PLAN.md`, `explanation.pdf` |
+| §7 | Narrative reconciliation: does every interpretive claim about Phase 10 still match the corrected CSVs? | SIGNIFICANT | 1 claim reversed (headline collision-rate finding + its timing explanation), 1 claim corrected in scope (noise-sweep cliff location), 1 explanation removed (the 4-of-6 detection-margin story); all fixed across `docs/phase10-findings.md`, `README.md`, `IMPLEMENTATION_PLAN.md` |
 
 Two CRITICAL findings (§1.1, §1.3) and one SIGNIFICANT finding (§3.5, which follows directly
 from §1.3) drove Part 2. §7's reconciliation pass found the corrected data itself was already
 right (computed live from the CSVs) but several pieces of surrounding prose across the project's
-docs and `explanation.pdf` were still describing the pre-fix world - itself a SIGNIFICANT
+docs were still describing the pre-fix world - itself a SIGNIFICANT
 finding, fixed in full rather than left as a residual inconsistency between the "official"
 corrected numbers and the story told about them.
 
@@ -477,7 +477,7 @@ necessary.**
 
 ## 7. Narrative reconciliation - checking every interpretive claim against the corrected CSVs
 
-A results table computed live from the corrected CSVs (§9 of `explanation.pdf`, the plots in
+A results table computed live from the corrected CSVs (the plots in
 `results/plots/`) is trustworthy by construction. The prose written *around* those tables is
 not automatically trustworthy just because the fix that produced the new numbers was itself
 correct - a sub-finding, a mechanism explanation, or a unifying thesis can silently keep
@@ -504,8 +504,7 @@ explicitly, not silently swapped**:
   extra). Post-fix: `policy_raw` 50%, `policy_supervised` 12% matching `baseline_mppi` exactly
   (the raw policy is the less-safe one; the supervisor closes essentially all of that gap).
   Rewritten throughout `docs/phase10-findings.md` (CORRECTION section, now leading the
-  document), `README.md`, and `explanation.pdf` (cover page, executive summary, §9, §10.2,
-  §13.1) - not reframed as "defensible under a different reading."
+  document) and `README.md` - not reframed as "defensible under a different reading."
 - **The detection-margin timing breakdown.** Pre-fix: 6 reactive-mode `policy_supervised`
   collisions, split 2-caught-instantly / 4-caught-seconds-late-via-a-separate-approach - the
   basis for describing a "broad detection gap." Post-fix: only 2 collisions remain, both
@@ -523,7 +522,7 @@ explicitly, not silently swapped**:
   than assuming "same shape" applied to every number in that section. The underlying mechanism
   conclusion (saturation, not a rising floor - based on the *rate*-normalized column, which held
   unchanged, see above) is unaffected; the specific claim about *where* the outcome-level cliff
-  sits was corrected in `docs/phase10-findings.md` and `explanation.pdf` §9.5.
+  sits was corrected in `docs/phase10-findings.md`.
 - **The central thesis.** Pre-fix framing ("the supervisor's reliability tracks how
   well-characterized the hazard is") was built around a dynamic-hazard case where the supervisor
   underperformed doing nothing extra. Restated, not discarded: the gradient (perfect against a
@@ -543,8 +542,8 @@ explicitly, not silently swapped**:
   down: the same category of explanation (inherited, untuned training-distribution thresholds)
   still accounts for the two much-narrower last-instant residual collisions that do remain, and
   is kept only at that reduced scope.
-- No other claim in `docs/phase10-findings.md`, `README.md`, `docs/audit.md`, or
-  `explanation.pdf` was found to exist solely to explain a now-nonexistent result.
+- No other claim in `docs/phase10-findings.md`, `README.md`, or `docs/audit.md` was found to
+  exist solely to explain a now-nonexistent result.
 
 **Independence check, done rather than assumed**: `depot_keepout_block` runs zero pedestrians by
 explicit scenario design (`scenarios.py`: `num_pedestrians: 0`, "isolate the keep-out mechanism,
@@ -553,4 +552,4 @@ per-human offset correction has nothing to act on, and the supervisor's forward-
 check in this scenario never touches a human position at all. Confirmed independent by
 construction, not just by numeric similarity (428 vs. 439 total interventions pre/post-fix,
 attributable to ordinary Gazebo run-to-run timing variation, §1.6) - documented at this level of
-detail in `docs/phase10-findings.md`'s keepout section and `explanation.pdf` §9.6.
+detail in `docs/phase10-findings.md`'s keepout section.

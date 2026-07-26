@@ -392,7 +392,7 @@ perfect against a static exactly-known hazard, and its intervention rate saturat
 climbing once perception degrades enough to already confuse the policy itself - all at a real,
 honestly-reported efficiency cost. Two of sixteen reactive-mode supervised episodes still
 collide, both caught by the supervisor within a quarter of a second of contact - a narrow,
-last-instant margin limit worth a targeted follow-up (§12.2 of `explanation.pdf`), not the
+last-instant margin limit worth a targeted follow-up, not the
 dominant, several-seconds-early detection gap the original buggy run seemed to show.
 
 ## Files

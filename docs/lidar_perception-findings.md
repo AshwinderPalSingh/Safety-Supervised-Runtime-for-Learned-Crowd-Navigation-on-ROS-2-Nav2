@@ -113,7 +113,7 @@ startup) doesn't satisfy that precondition, and the misuse crashed instead of th
 
 **Also, independently of the crash**: a nonzero timeout (default 0.1 s) sitting inside this call
 chain is a real latency risk on its own merits - `processScan()` feeds directly into the
-controller's 30 ms-watchdog-bounded decision path (§7 of `explanation.pdf`), so a call that could
+controller's 30 ms-watchdog-bounded decision path, so a call that could
 legitimately block for up to 100 ms has no business being in it, whether or not it happens to
 crash first.
 

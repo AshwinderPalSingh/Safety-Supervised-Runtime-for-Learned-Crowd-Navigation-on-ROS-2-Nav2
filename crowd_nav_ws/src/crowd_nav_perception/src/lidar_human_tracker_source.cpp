@@ -55,7 +55,7 @@ void LidarHumanTrackerSource::processScan(
   // testing already observed live (RViz's "timestamp earlier than all data in the transform
   // cache" warnings). Independently of that crash, a blocking wait of any length inside this
   // call chain would itself be a latency risk - it feeds directly into the controller's
-  // 30 ms-watchdog-bounded decision path (§7 of explanation.pdf) - so "return immediately with
+  // 30 ms-watchdog-bounded decision path - so "return immediately with
   // whatever's already buffered" is the correct choice on its own merits, not just a crash
   // workaround.
   std::vector<Detection> detections;

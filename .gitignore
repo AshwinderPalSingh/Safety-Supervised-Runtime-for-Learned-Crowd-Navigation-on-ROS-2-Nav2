@@ -5,3 +5,6 @@ crowd_nav_ws/src/crowd_nav_evaluation/results*/logs/
 
 __pycache__/
 *.pyc
+
+# Kept locally, not published to the repo.
+explanation.pdf
