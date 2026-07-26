@@ -1,6 +1,6 @@
 # Phase 5 findings log
 
-Per IMPLEMENTATION_PLAN.md's Phase 5 ("HumanStateSource, perception degradation, observation
+Per Phase 5 ("HumanStateSource, perception degradation, observation
 builder"), rescoped in v1.9 before any implementation started (RNG substream separation,
 sim-time-keyed latency buffer, schema pinned to the reference implementation - see §4.1.1,
 §4.1.2, §4.2, and the v1.9 changelog entry). Same discipline as prior phases: findings recorded

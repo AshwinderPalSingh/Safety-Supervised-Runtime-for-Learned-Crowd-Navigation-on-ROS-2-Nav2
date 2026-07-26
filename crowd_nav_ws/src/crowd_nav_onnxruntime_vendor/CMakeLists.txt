@@ -3,7 +3,7 @@ project(crowd_nav_onnxruntime_vendor)
 
 find_package(ament_cmake REQUIRED)
 
-# Pinned per IMPLEMENTATION_PLAN.md §1.3/§1.9: CPU-only Linux x64 release. Originally pinned
+# Pinned per /§1.9: CPU-only Linux x64 release. Originally pinned
 # to 1.17.3 (mature, well within Humble's window) but that only supports ONNX IR version <= 9;
 # PyTorch's current exporter (this machine: torch 2.13, dynamo-based) emits IR version 10,
 # which 1.17.3 rejects outright at load time ("Unsupported model IR version: 10, max
@@ -67,7 +67,7 @@ set_target_properties(onnxruntime PROPERTIES
 )
 
 # Phase 0 plumbing check: prove the vendored runtime actually links and runs inference
-# (IMPLEMENTATION_PLAN.md Phase 0 / Phase 6), not just that CMake found the headers.
+# ( Phase 0 / Phase 6), not just that CMake found the headers.
 add_executable(test_onnxruntime_link test/test_onnxruntime_link.cpp)
 target_link_libraries(test_onnxruntime_link PRIVATE onnxruntime)
 install(TARGETS test_onnxruntime_link DESTINATION lib/${PROJECT_NAME})

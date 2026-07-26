@@ -1,6 +1,6 @@
 # Phase 9 findings log
 
-Per IMPLEMENTATION_PLAN.md's Phase 9 ("Safety supervisor"), rescoped in v1.17 before any
+Per Phase 9 ("Safety supervisor"), rescoped in v1.17 before any
 supervisor code was written (§4.8, three requirements from review: resolve the FOV filter
 first; guarantee the supervisor and MPPI share the same costmap instance and footprint
 treatment; bound the forward-sim cost by construction). The build order followed that

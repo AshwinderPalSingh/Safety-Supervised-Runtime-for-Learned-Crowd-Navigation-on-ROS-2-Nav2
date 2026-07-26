@@ -6,7 +6,7 @@
 namespace crowd_nav_safety_supervisor
 {
 
-// IMPLEMENTATION_PLAN.md S4.4/S4.8.3/S4.8.5. All thresholds independently toggleable/tunable -
+// /S4.8.3/S4.8.5. All thresholds independently toggleable/tunable -
 // none of this is compiled in as a literal at the call site.
 struct SafetySupervisorConfig
 {

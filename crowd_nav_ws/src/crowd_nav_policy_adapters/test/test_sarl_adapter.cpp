@@ -1,4 +1,4 @@
-// SarlAdapter's Phase 8 done-bar (IMPLEMENTATION_PLAN.md S3 Phase 8 / S4.7): chosen action
+// SarlAdapter's Phase 8 done-bar ( Phase 8 / S4.7): chosen action
 // matches the real reference SARL's action on the same inputs, including ADVERSARIAL cases
 // (top-two candidates within a fraction of a percent of each other - mined from the reference's
 // own action_values, not hand-picked) where a subtle discount/reward-term bug would surface as
@@ -170,8 +170,8 @@ TEST(SarlAdapterActionMatch, MatchesReferenceOnAdversarialAndTypicalCases)
   EXPECT_GT(adversarial_count, 0u);
 }
 
-// Phase 2's undersized-radius bug is the precedent for how quietly a wrong radius propagates
-// (IMPLEMENTATION_PLAN.md S4.3/S4.7) - assert the value actually reaching the network's
+// Phase 2's undersized-radius bug is the precedent for how quietly a wrong radius propagates -
+// assert the value actually reaching the network's
 // self-state feature is the training value (policy_radius_m), not the physical URDF value
 // (robot_collision_radius, 0.14), even though nothing here would throw or crash if it were
 // wrong - it would just silently feed the network an out-of-distribution radius.
@@ -203,7 +203,7 @@ TEST(SarlAdapterRadiusSplit, SelfStateRadiusFedToNetworkIsPolicyRadiusNotUrdfRad
     << "self-state radius must not silently be the physical URDF radius";
 }
 
-// Dummy-injection-on-empty (IMPLEMENTATION_PLAN.md S4.8.1, revised from S4.7's original
+// Dummy-injection-on-empty (revised from the original
 // empty-batch stopgap): buildInputs() must inject exactly one synthetic human rather than
 // returning a zero-length batch, replicating the reference's own JointState/dummyState2
 // convention so the network is never run on a genuinely empty, architecturally-untested input.

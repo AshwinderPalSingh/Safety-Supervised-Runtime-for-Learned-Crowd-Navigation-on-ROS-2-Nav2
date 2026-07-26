@@ -1,6 +1,6 @@
 # Phase 3 findings log
 
-Per IMPLEMENTATION_PLAN.md's Phase 3 ("Dynamic keep-out zones"), same discipline as prior
+Per Phase 3 ("Dynamic keep-out zones"), same discipline as prior
 phases: findings recorded as they land.
 
 **Status: DONE, done-bar met** — verified with real evidence (goal outcomes, ground-truth

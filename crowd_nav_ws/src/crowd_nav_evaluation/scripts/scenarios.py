@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Scenario/config/matrix definitions for the Phase 10 evaluation harness
-(IMPLEMENTATION_PLAN.md S4.9). Plain data, imported directly by run_episode.py/run_matrix.py
+"""Scenario/config/matrix definitions for the Phase 10 evaluation harness.
+Plain data, imported directly by run_episode.py/run_matrix.py
 (installed side by side in lib/crowd_nav_evaluation/, no package __init__ needed - a script's
 own directory is always on sys.path when run directly).
 
@@ -74,7 +74,7 @@ _DEPOT_WORLD_NAME = "crowd_nav_depot_scaled"
 # Core matrix: 2 families x 2 pedestrian modes, N=8 seeds each (seeds assigned outside this
 # dict, see iter_core_episodes() below) - num_pedestrians=4 is deliberately below
 # SafetySupervisorConfig::max_train_humans (5 default) so CROWD_SIZE isn't a structural given
-# for every episode (IMPLEMENTATION_PLAN.md S4.8.5/phase9-findings.md's own CROWD_SIZE finding).
+# for every episode (phase9-findings.md's own CROWD_SIZE finding).
 CORE_SCENARIOS = {
     "open_arena": {
         "world_file": _OPEN_ARENA_WORLD,
@@ -94,7 +94,7 @@ CORE_SCENARIOS = {
     },
 }
 
-# Named, permanent scenario (IMPLEMENTATION_PLAN.md S4.9.3) - replaces Phase 9's inconclusive
+# Named, permanent scenario - replaces Phase 9's inconclusive
 # ad hoc zone placements. Run once per config, not part of the N=8 statistical matrix. Expected
 # outcome per config is documented in the plan, not just implied by the harness's own behavior.
 #

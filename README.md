@@ -310,7 +310,7 @@ Ranked by how directly each follows from a finding already in this report — no
 | **`docs/lidar_perception-findings.md`** | The real, non-ground-truth LiDAR perception pipeline: design, two bugs found and fixed, live verification. |
 | **`docs/lessons.md`** | Transferable engineering lessons from the project, independent of this specific codebase. |
 | **`docs/phase0-findings.md`** … **`phase11-findings.md`** | Per-phase findings logs — every bug found, how it was verified, as it landed. |
-| **`IMPLEMENTATION_PLAN.md`** | The living implementation plan: phase-by-phase design decisions and final status. |
+| **** | The living implementation plan: phase-by-phase design decisions and final status. |
 
 ## Acknowledgments
 

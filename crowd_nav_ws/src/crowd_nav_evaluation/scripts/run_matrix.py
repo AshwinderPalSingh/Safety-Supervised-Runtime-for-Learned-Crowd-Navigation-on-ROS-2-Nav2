@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Top-level driver for the Phase 10 evaluation matrix (IMPLEMENTATION_PLAN.md S4.9). Each
+"""Top-level driver for the Phase 10 evaluation matrix. Each
 episode runs as its own subprocess (run_episode.py) - a fresh ROS graph/process tree per
 episode, so one hung or crashed episode can't wedge the rest of the matrix. Writes episodes.csv
 and interventions.csv incrementally (flushed after every episode), so a partial run is never a

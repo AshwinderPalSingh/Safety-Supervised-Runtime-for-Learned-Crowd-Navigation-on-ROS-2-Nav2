@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gazebo physical body for Phase 4's pedestrian simulation (IMPLEMENTATION_PLAN.md S1.2/S3;
+"""Gazebo physical body for Phase 4's pedestrian simulation;
 role expanded post-Phase-11 so LiDAR-based perception has something real to detect - see
 docs/lidar_perception-findings.md). Reads the authoritative PedestrianArray topic published by
 pedestrian_sim_node.py and teleports one collidable Gazebo model per pedestrian to match.

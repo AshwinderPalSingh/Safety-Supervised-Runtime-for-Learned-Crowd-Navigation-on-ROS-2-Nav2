@@ -7,7 +7,7 @@
 namespace crowd_nav_safety_supervisor
 {
 
-// IMPLEMENTATION_PLAN.md S4.4/S4.8.5 - the full trigger taxonomy for the "intervention rate
+// /S4.8.5 - the full trigger taxonomy for the "intervention rate
 // broken down by cause" headline metric. Mirrors InterventionEvent.msg's uint8 constants
 // exactly (see toMsgValue() below) - kept as a real C++ enum rather than passing the msg's raw
 // uint8 around internally, so SafetySupervisor's own logic/tests aren't coupled to the

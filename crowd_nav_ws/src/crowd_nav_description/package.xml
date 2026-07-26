@@ -6,7 +6,7 @@
   <description>
     URDF/xacro digital twin of the Nvis 3302ARD RoboCar. Confirmed geometry from the
     manufacturer datasheet; unmeasured parameters are marked [PENDING] and listed in
-    MEASUREMENTS.md. See IMPLEMENTATION_PLAN.md Phase 1.
+    MEASUREMENTS.md.
   </description>
   <maintainer email="ashwinder4377@gmail.com">ashwinder</maintainer>
   <license>MIT</license>

@@ -1,7 +1,7 @@
 # Single source of truth for every adapter's candidate-batch tensor shape - read by both
 # scripts/generate_dummy_model.py (Phase 6, to compute the trivial ONNX model's declared input
 # shape) and the C++ adapters (DummyAdapter now, SarlAdapter in Phase 8) at construction time.
-# IMPLEMENTATION_PLAN.md S4.3.1 has the full provenance - speed_samples/rotation_samples/
+# speed_samples/rotation_samples/
 # time_step_s are verified directly against the pinned checkpoint's own
 # crowd_nav/configs/policy.config [action_space] and env.config [env] sections, not memorized.
 

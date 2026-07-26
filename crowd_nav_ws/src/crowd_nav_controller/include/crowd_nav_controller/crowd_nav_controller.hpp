@@ -25,7 +25,7 @@
 namespace crowd_nav_controller
 {
 
-// IMPLEMENTATION_PLAN.md S3 Phase 7 / S4.6. Registered as the `FollowPath` plugin
+// Phase 7. Registered as the `FollowPath` plugin
 // (`crowd_nav_controller::CrowdNavController`). Owns exactly: (1) building a WorldState and
 // running it through a PolicyAdapter each decision tick, via ControllerDecisionCore's
 // watchdog/hold-last-action logic, and (2) converting the adapter's holonomic Velocity2D output
@@ -70,7 +70,7 @@ private:
   rcl_interfaces::msg::SetParametersResult onSetParameters(
     const std::vector<rclcpp::Parameter> & parameters);
   void onKeepoutMask(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
-  // IMPLEMENTATION_PLAN.md S4.8.7: publishes InterventionEvent and logs (edge-triggered per
+  // : publishes InterventionEvent and logs (edge-triggered per
   // cause, same pattern as the existing source-switch log) at the point of rejection.
   void publishIntervention(
     crowd_nav_safety_supervisor::InterventionCause cause,
@@ -124,7 +124,7 @@ private:
 
   // Edge-triggered (logs only on change, not per-tick) so a source switch is visible in the
   // log without spamming it every 20 Hz tick - useful telemetry beyond testing too, and what
-  // makes the failover-transition verification (IMPLEMENTATION_PLAN.md S4.6) observable
+  // makes the failover-transition verification observable
   // without needing a dedicated debug topic.
   bool logged_source_is_fallback_ = false;
   // Same edge-triggered idea, per intervention cause (S4.8.7) - avoids spamming the log every

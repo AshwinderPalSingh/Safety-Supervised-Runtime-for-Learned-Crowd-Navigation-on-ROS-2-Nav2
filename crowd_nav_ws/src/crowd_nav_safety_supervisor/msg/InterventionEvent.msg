@@ -1,4 +1,4 @@
-# IMPLEMENTATION_PLAN.md S4.8.7. Published on /intervention_events every time SafetySupervisor
+# Published on /intervention_events every time SafetySupervisor
 # rejects a candidate command - Phase 10's evaluation harness is the eventual consumer for the
 # "intervention rate broken down by cause" headline metric. Also logged via RCLCPP_WARN at the
 # point of rejection (edge-triggered per cause) for interactive visibility.

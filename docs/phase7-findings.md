@@ -1,6 +1,6 @@
 # Phase 7 findings log
 
-Per IMPLEMENTATION_PLAN.md's Phase 7 ("Controller plugin"), rescoped in v1.13 before any
+Per Phase 7 ("Controller plugin"), rescoped in v1.13 before any
 implementation started (watchdog boundary structured for Phase 9 from day one, failover
 *transition* added to the done-bar alongside the trigger, pluginlib conventions checked against
 real Nav2 source first - see §4.6 and the v1.13 changelog entry). This is the first phase

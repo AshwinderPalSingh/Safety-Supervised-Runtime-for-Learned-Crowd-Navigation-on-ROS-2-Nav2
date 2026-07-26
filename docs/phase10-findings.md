@@ -1,6 +1,6 @@
 # Phase 10 findings log
 
-Per IMPLEMENTATION_PLAN.md's Phase 10 ("Evaluation matrix"), rescoped in v1.19 before
+Per Phase 10 ("Evaluation matrix"), rescoped in v1.19 before
 implementation (§4.9, three requirements from review: pilot the matrix before running it; decide
 N and the noise-sweep points before seeing any results; expect `policy_supervised` to
 underperform `baseline_mppi` on efficiency and report it regardless). A fourth, informal

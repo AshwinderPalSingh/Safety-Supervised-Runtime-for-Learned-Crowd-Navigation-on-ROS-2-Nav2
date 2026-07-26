@@ -8,7 +8,7 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     # Overridable so SLAM mode can also be exercised in the open-arena world (empty.sdf,
-    # IMPLEMENTATION_PLAN.md S3 Phase 6/7 done-bars) without a pre-built map, not just the
+    #  Phase 6/7 done-bars) without a pre-built map, not just the
     # structured depot - was hardcoded before, matching amcl.launch.py's `map` arg pattern.
     world_file_arg = DeclareLaunchArgument('world_file', default_value='depot_scaled.sdf')
 

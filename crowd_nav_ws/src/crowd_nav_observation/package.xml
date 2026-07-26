@@ -5,8 +5,8 @@
   <version>0.1.0</version>
   <description>
     Phase 5: canonical WorldState struct and the observation builder producing SARL's raw
-    (pre-rotation) flat vector, schema verified against tkkim-robot/Gazebo-CrowdNav
-    (IMPLEMENTATION_PLAN.md S4.1.1). Zero Nav2 dependency by design (S2).
+    (pre-rotation) flat vector, schema verified against tkkim-robot/Gazebo-CrowdNav.
+    Zero Nav2 dependency by design.
   </description>
   <maintainer email="ashwinder4377@gmail.com">ashwinder</maintainer>
   <license>MIT</license>

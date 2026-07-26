@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""In-episode monitor (IMPLEMENTATION_PLAN.md S4.9): an rclpy node that sends the NavigateToPose
+"""In-episode monitor: an rclpy node that sends the NavigateToPose
 goal, watches ground truth for the harness's own outcome determination (never the robot's own
 perception - matching this project's established "verify against ground truth" discipline,
 docs/phase2-findings.md), and returns one episode's metrics. One process, one episode, then
@@ -51,8 +51,8 @@ class EpisodeMonitor(Node):
         self._nav2_result_code = None
 
         # Message counts for the topics this project's own stack depends on, not just outcome/
-        # metrics - added for the Phase 11 nightly smoke test's own explicit requirement
-        # (IMPLEMENTATION_PLAN.md S3): assert these topics are actually live, not just that the
+        # metrics - added for the Phase 11 nightly smoke test's own explicit requirement:
+        # assert these topics are actually live, not just that the
         # launch succeeds and a goal is reached. Reuses this class's existing subscriptions
         # rather than a parallel topic-checking mechanism - /ground_truth/robot_pose is the
         # exact topic that silently stopped publishing for three phases (docs/phase10-findings.md,

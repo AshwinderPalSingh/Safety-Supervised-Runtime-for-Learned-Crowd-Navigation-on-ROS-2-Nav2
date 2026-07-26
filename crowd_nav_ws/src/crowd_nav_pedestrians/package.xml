@@ -7,8 +7,8 @@
     Phase 4 pedestrian simulation: a single deterministic, seeded, sim-time-stepped social-force
     node (reactive/non_reactive as a config flag, ground-truth robot pose injected from Gazebo,
     not odom) publishing a ground-truth PedestrianArray topic, plus an optional launch-toggleable
-    visual-only Gazebo actor mirror node. HuNav is not used - see IMPLEMENTATION_PLAN.md S1.2 for
-    why (determinism is the requirement Phase 10's evaluation matrix needs, and a HuNav-wrapped
+    visual-only Gazebo actor mirror node. HuNav is not used
+    (determinism is the requirement Phase 10's evaluation matrix needs, and a HuNav-wrapped
     social-force engine doesn't cleanly offer byte-identical seeded reproduction).
   </description>
   <maintainer email="ashwinder4377@gmail.com">ashwinder</maintainer>

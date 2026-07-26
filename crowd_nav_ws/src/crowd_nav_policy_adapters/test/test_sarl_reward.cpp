@@ -1,5 +1,5 @@
 // Hand-computed cases matching multi_human_rl.py's compute_reward() exactly, read directly
-// from the reference source, not memory (IMPLEMENTATION_PLAN.md S4.7).
+// from the reference source, not memory.
 #include "gtest/gtest.h"
 
 #include "crowd_nav_policy_adapters/sarl_reward.hpp"

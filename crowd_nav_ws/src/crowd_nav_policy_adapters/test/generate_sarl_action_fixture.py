@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates SarlAdapter's round-trip action-match fixture (IMPLEMENTATION_PLAN.md S3 Phase 8 /
+"""Generates SarlAdapter's round-trip action-match fixture ( Phase 8 /
 S4.7), by running the REAL reference predict() over many synthetic scenarios and mining the ones
 where the top two candidates' values are genuinely close - not hand-picked. An obviously-best
 action matches even with a wrong discount factor or reward term; a near-tied one doesn't.
@@ -70,7 +70,7 @@ def main():
             sorted_idx = np.argsort(values)[::-1]
             top1, top2 = values[sorted_idx[0]], values[sorted_idx[1]]
             rel_gap = abs(top1 - top2) / max(abs(top1), 1e-9)
-            # IMPORTANT (found while generating this fixture - IMPLEMENTATION_PLAN.md S4.7):
+            # IMPORTANT (found while generating this fixture):
             # predict() does NOT see the raw `humans` list constructed above. This repo's own
             # crowd_sim/envs/utils/state.py ("CrowdNav State Modified Ver / add Dummy Ped ... /
             # FOV ROI Applied") applies a simulated depth-camera FOV filter

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!-- Hardware boundary (IMPLEMENTATION_PLAN.md S4.5): today this points at the Gazebo
+  <!-- Hardware boundary: today this points at the Gazebo
        simulation plugin. A future ESP32 hardware_interface::SystemInterface plugin drops in
        by changing ONLY hardware_plugin below - the joint/command/state interface names and
        types, diff_drive_controller config, and everything above this file are unchanged. -->

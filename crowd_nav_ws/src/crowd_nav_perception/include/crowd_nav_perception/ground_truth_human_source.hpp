@@ -20,7 +20,7 @@
 namespace crowd_nav_perception
 {
 
-// IMPLEMENTATION_PLAN.md S4.1/S4.2. Wraps Phase 4's ground-truth PedestrianArray topic,
+// /S4.2. Wraps Phase 4's ground-truth PedestrianArray topic,
 // applies the degradation model, returns the degraded set. The message-adapter from
 // crowd_nav_pedestrians::msg::PedestrianArray to HumanObservation lives entirely inside this
 // class (onPedestrianArray) - callers of HumanStateSource never see the concrete message type,

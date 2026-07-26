@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!-- Deliberately conservative LiDAR spec (IMPLEMENTATION_PLAN.md / brief S5.1): budget
+  <!-- Deliberately conservative LiDAR spec: budget
        8m/5Hz/~1deg sensor, not a premium unit. All parameters are xacro args, not measured
        values, so the whole stack can be swept/tuned for the pessimistic case. -->
   <xacro:macro name="crowd_nav_lidar"

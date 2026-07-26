@@ -9,7 +9,7 @@ namespace crowd_nav_policy_adapters
 {
 
 // Reproduces cadrl.py's rotate() exactly (holonomic branch only - the only kinematics mode the
-// pinned checkpoint was trained with, IMPLEMENTATION_PLAN.md S1.9/S4.7), verified against the
+// pinned checkpoint was trained with, /S4.7), verified against the
 // actual reference source and a checked-in fixture (test/fixtures/sarl_rotate_reference.txt,
 // generated the same way as Phase 5's - S4.1.2). This is the PRODUCTION rotation used by
 // SarlAdapter; Phase 5's own round-trip test used a test-only copy of this same formula before

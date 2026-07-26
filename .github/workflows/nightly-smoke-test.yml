@@ -1,6 +1,6 @@
 name: Nightly Gazebo smoke test
 
-# IMPLEMENTATION_PLAN.md S3/S6, Phase 11: launches the FULL stack (Gazebo + Nav2 + one
+# /S6, Phase 11: launches the FULL stack (Gazebo + Nav2 + one
 # pedestrian) and drives one goal to completion in the open-arena world. Deliberately NOT a
 # per-PR gate (see ci.yml's own header comment for why full sim-in-CI stays separate) - this is
 # a smoke test for launch-file/parameter-schema rot and, per the specific requirement pinned
@@ -69,8 +69,8 @@ jobs:
           cd crowd_nav_ws
           colcon build --symlink-install
 
-      # gz-sim's rendering system needs a GL context even headless (IMPLEMENTATION_PLAN.md S1,
-      # docs/phase1-findings.md) - Xvfb + software rendering is the cheapest of the three
+      # gz-sim's rendering system needs a GL context even headless
+      # (docs/phase1-findings.md) - Xvfb + software rendering is the cheapest of the three
       # fallback options that finding laid out, and the one this project actually uses.
       - name: Run one episode and assert topic liveness
         run: |

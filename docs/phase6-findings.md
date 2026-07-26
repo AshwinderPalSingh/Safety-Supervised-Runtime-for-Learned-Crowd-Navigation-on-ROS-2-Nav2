@@ -1,6 +1,6 @@
 # Phase 6 findings log
 
-Per IMPLEMENTATION_PLAN.md's Phase 6 ("Synthetic adapter + ONNX plumbing validation"), rescoped
+Per Phase 6 ("Synthetic adapter + ONNX plumbing validation"), rescoped
 in v1.11 before any implementation started (candidate action space pinned to a single config,
 verified against the real reference source; `DummyAdapter` scoped as a permanent fixture, not a
 Phase 6 throwaway - see §4.3.1 and the v1.11 changelog entry). Same discipline as prior phases:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plots from episodes.csv/interventions.csv (IMPLEMENTATION_PLAN.md S4.9) - variance/
+"""Plots from episodes.csv/interventions.csv - variance/
 distributions, not just means, per the phase's own done-bar wording. Reads CSVs written by
 run_matrix.py; does not compute anything during the run itself.
 """

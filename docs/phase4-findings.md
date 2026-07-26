@@ -1,6 +1,6 @@
 # Phase 4 findings log
 
-Per IMPLEMENTATION_PLAN.md's Phase 4 ("Pedestrian simulation"), rescoped in v1.7 before any
+Per Phase 4 ("Pedestrian simulation"), rescoped in v1.7 before any
 implementation started (HuNav dropped, single deterministic ROS node - see §1.2, and the v1.7
 changelog entry, for the reasoning). Same discipline as prior phases: findings recorded as
 they land.

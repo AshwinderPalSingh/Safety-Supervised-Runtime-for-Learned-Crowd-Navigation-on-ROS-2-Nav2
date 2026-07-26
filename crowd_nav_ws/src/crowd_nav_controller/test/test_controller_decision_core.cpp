@@ -1,5 +1,5 @@
 // Tests drive ControllerDecisionCore directly with fake decision callables - no live Nav2 node,
-// costmap, tf buffer, or ONNX session needed (IMPLEMENTATION_PLAN.md S4.6). `now` timestamps
+// costmap, tf buffer, or ONNX session needed. `now` timestamps
 // are synthetic sim time (scheduling is against sim time, per this project's established
 // discipline - see crowd_nav_perception's latency tests); the watchdog bound itself is REAL
 // wall-clock time (std::async + wait_for), since that's what actually bounds a controller

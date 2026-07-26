@@ -1,6 +1,6 @@
 # Phase 1 findings log
 
-Live log, per IMPLEMENTATION_PLAN.md's Phase 1 ("Robot digital twin"). Committed as findings
+Live log, per Phase 1 ("Robot digital twin"). Committed as findings
 landed, same discipline as Phase 0.
 
 ## Packages built

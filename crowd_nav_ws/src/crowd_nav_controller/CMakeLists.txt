@@ -49,7 +49,7 @@ set(dependencies
 # libcrowd_nav_controller.a built and gtest-linked fine, but controller_server failed with
 # "Could not find library corresponding to plugin... Make sure that the library
 # 'crowd_nav_controller' actually exists" - a unit test alone would never catch this, only the
-# live pluginlib load path does (IMPLEMENTATION_PLAN.md S4.6's whole reason for a live
+# live pluginlib load path does ('s whole reason for a live
 # Gazebo/Nav2 verification, not just gtest, for this phase).
 add_library(${PROJECT_NAME} SHARED
   src/controller_decision_core.cpp

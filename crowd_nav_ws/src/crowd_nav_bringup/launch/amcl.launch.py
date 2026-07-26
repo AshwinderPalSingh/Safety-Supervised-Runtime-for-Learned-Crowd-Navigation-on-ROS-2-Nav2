@@ -14,7 +14,7 @@ def generate_launch_description():
             FindPackageShare('crowd_nav_bringup'), 'maps', 'depot_scaled.yaml',
         ]),
     )
-    # World/spawn and controller-config launch args (IMPLEMENTATION_PLAN.md S4.9) - defaults
+    # World/spawn and controller-config launch args - defaults
     # match this launch file's own pre-Phase-10 hardcoded values exactly, so every existing
     # manual invocation is unaffected; the evaluation harness overrides them per scenario/config.
     world_file_arg = DeclareLaunchArgument('world_file', default_value='depot_scaled.sdf')
@@ -87,7 +87,7 @@ def generate_launch_description():
         package='nav2_amcl', executable='amcl', output='screen',
         parameters=[nav2_params],
     )
-    # FollowPath overrides (IMPLEMENTATION_PLAN.md S4.9) - a plain dict entry AFTER the base
+    # FollowPath overrides - a plain dict entry AFTER the base
     # nav2_params.yaml in the parameters list overrides just these three keys; every other
     # FollowPath/costmap/AMCL parameter still comes from the one shared YAML file, no
     # per-config file duplication. supervisor_enabled needs an explicit ParameterValue(...,

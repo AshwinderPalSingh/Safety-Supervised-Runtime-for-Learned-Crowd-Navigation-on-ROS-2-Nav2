@@ -184,7 +184,7 @@ TEST(GroundTruthHumanSource, MaxRangeExcludesDistantHumans)
   EXPECT_EQ(humans[0].id, 1u);
 }
 
-// IMPLEMENTATION_PLAN.md S4.8.1 - this robot's real ~180 degree sensor (half-angle pi/2).
+// Matches this robot's real ~180 degree sensor (half-angle pi/2).
 TEST(GroundTruthHumanSource, FovHalfAngleExcludesHumansBehindRobot)
 {
   DegradationParams params;
@@ -227,7 +227,7 @@ TEST(GroundTruthHumanSource, FovHalfAngleRotatesWithRobotHeading)
   EXPECT_EQ(ids, (std::set<uint32_t>{1u, 2u}));
 }
 
-// IMPLEMENTATION_PLAN.md S4.8.5 - the dropout model's own count, read-and-reset each
+// The dropout model's own count, read-and-reset each
 // getHumans() call, is what makes LOW_PERCEPTION_CONFIDENCE a real, checkable signal.
 TEST(GroundTruthHumanSource, NumDegradedLastCallCountsOnlyDropoutNotFovExclusion)
 {

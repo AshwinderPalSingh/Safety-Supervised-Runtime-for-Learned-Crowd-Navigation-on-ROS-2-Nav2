@@ -1,4 +1,4 @@
-// IMPLEMENTATION_PLAN.md S3 Phase 9 / S4.8 done-bar: "supervisor geometry and OOD-threshold
+// Phase 9 done-bar: "supervisor geometry and OOD-threshold
 // unit tests green," including a real (not hypothetical) test that LOW_PERCEPTION_CONFIDENCE
 // actually fires on a dropout and does not fire on a legitimately empty/clear scene.
 #include <cmath>

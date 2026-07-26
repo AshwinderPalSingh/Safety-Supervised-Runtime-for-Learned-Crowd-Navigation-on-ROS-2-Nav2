@@ -1,6 +1,6 @@
 // Deliberately includes cases built to FAIL under a validator that just rubber-stamps
 // agreement - a validator that never rejects anything would pass a "does it accept the correct
-// shape" test trivially. See IMPLEMENTATION_PLAN.md S3 Phase 6's "deliberately-mismatched
+// shape" test trivially. See Phase 6's "deliberately-mismatched
 // expectedShape()" done-bar item.
 #include <string>
 

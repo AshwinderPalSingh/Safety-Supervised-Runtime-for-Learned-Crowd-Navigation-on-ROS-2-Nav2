@@ -1,9 +1,9 @@
 # Phase 11 findings log
 
-Per IMPLEMENTATION_PLAN.md's Phase 11 ("CI and docs"), the project's final phase: a per-PR CI
+Per Phase 11 ("CI and docs"), the project's final phase: a per-PR CI
 gate, a nightly Gazebo smoke test, and a README rewrite - closing the project at 11 of the
 originally-planned 12 phases (Phase 12/HEIGHT integration scoped out explicitly, see the
-README's Future Work section and IMPLEMENTATION_PLAN.md's Phase 12 entry).
+README's Future Work section).
 
 **Status: DONE, done-bar met.**
 - `.github/workflows/ci.yml`: per-PR build + full 60-test unit suite + lint, via

@@ -1,6 +1,6 @@
 # Phase 8 findings log
 
-Per IMPLEMENTATION_PLAN.md's Phase 8 ("SARL ONNX export + SarlAdapter"), rescoped in v1.15
+Per Phase 8 ("SARL ONNX export + SarlAdapter"), rescoped in v1.15
 before any implementation started (export verified in Python before any C++ code, adversarial
 action-match cases mined from the reference itself, a dedicated policy_radius/robot_radius
 assertion - see §4.7 and the v1.15 changelog entry). This was the highest-uncertainty phase

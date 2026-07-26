@@ -11,7 +11,7 @@
 namespace crowd_nav_policy_adapters
 {
 
-// IMPLEMENTATION_PLAN.md Phase 6: the throwaway *policy* (not the throwaway plumbing - the
+// Phase 6: the throwaway *policy* (not the throwaway plumbing - the
 // ONNX vendor package, shape validation, candidate generation/propagation, and observation
 // builder it exercises are all real and reused unchanged by Phase 8's SarlAdapter). Proves the
 // PolicyAdapter/ONNX/controller plumbing end to end with zero SARL-specific risk mixed in, and

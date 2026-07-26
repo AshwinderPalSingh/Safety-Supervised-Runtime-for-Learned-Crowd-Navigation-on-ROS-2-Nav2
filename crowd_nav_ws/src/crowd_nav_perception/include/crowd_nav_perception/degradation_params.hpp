@@ -7,7 +7,7 @@
 namespace crowd_nav_perception
 {
 
-// IMPLEMENTATION_PLAN.md S4.2. All defaults are zero/off - oracle passthrough unless
+// All defaults are zero/off - oracle passthrough unless
 // configured. degradation_seed is REQUIRED to be independent of whatever seed drives Phase 4's
 // pedestrian-motion simulation (see GroundTruthHumanSource's constructor comment for why this
 // matters and how it's enforced) - it is not the raw scenario seed, it's a value already
@@ -20,7 +20,7 @@ struct DegradationParams
   double dropout_prob = 0.0;
   double latency_s = 0.0;
   std::optional<double> max_range_m;
-  // Angular half-FOV relative to the robot's current heading (IMPLEMENTATION_PLAN.md S4.8.1) -
+  // Angular half-FOV relative to the robot's current heading -
   // e.g. M_PI/2 for this robot's real ~180 degree sensor. Unset (default) means no angular
   // restriction, matching every other field's "off unless configured" convention. Requires
   // setRobotPose()'s theta to have been set at least once; if it hasn't, this check is skipped

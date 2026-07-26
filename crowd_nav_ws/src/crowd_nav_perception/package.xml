@@ -10,7 +10,7 @@
     own /scan (clustering + frame-to-frame tracking + TF-based frame conversion) - the
     TrackedHumanSource seam this package always documented but left as a stub, filled in ahead
     of real-hardware bring-up (docs/lidar_perception-findings.md). Zero Nav2 dependency by
-    design (IMPLEMENTATION_PLAN.md S2) - unit-testable in plain colcon/gtest without spinning up
+    design - unit-testable in plain colcon/gtest without spinning up
     simulation.
   </description>
   <maintainer email="ashwinder4377@gmail.com">ashwinder</maintainer>

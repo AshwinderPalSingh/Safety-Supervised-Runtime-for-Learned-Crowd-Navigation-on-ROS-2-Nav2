@@ -35,7 +35,7 @@ diff_drive_base_controller:
     cmd_vel_timeout: 0.5
     use_stamped_vel: false
 
-    # max_vel_x is the policy-training-matched regime (IMPLEMENTATION_PLAN.md S7 / brief S7):
+    # max_vel_x is the policy-training-matched regime:
     # SARL-family policies were trained around ~1 m/s human-scale motion. The physical
     # Nvis on its 8.4V pack will manage roughly 0.3 m/s - that's the hardware deviation,
     # documented in MEASUREMENTS.md, to switch to if/when physical deployment happens.

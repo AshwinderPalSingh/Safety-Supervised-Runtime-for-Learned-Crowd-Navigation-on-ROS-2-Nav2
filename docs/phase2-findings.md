@@ -1,6 +1,6 @@
 # Phase 2 findings log
 
-Live log, per IMPLEMENTATION_PLAN.md's Phase 2 ("Baseline Nav2 + AMCL + SLAM toolbox"), same
+Live log, per Phase 2 ("Baseline Nav2 + AMCL + SLAM toolbox"), same
 discipline as Phases 0-1: findings recorded as they land, real bugs kept in the record rather
 than quietly fixed.
 

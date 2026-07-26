@@ -16,7 +16,7 @@ public:
   using std::runtime_error::runtime_error;
 };
 
-// IMPLEMENTATION_PLAN.md S4.3: "At load time, the controller plugin queries the ONNX Runtime
+// : "At load time, the controller plugin queries the ONNX Runtime
 // session's actual input/output tensor names and shapes and asserts they match
 // expectedShape() - mismatch fails the lifecycle transition loudly rather than segfaulting or
 // silently misinterpreting a tensor." Checks input/output count, names (order-sensitive - ONNX

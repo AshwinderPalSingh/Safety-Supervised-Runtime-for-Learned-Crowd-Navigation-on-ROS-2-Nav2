@@ -13,7 +13,7 @@
 
   <!-- Single source of truth for any circular collision-radius approximation of this robot
        (Nav2 costmaps, the Phase 9 safety supervisor's forward-sim collision check - see
-       IMPLEMENTATION_PLAN.md S4.3). MUST be derived from the chassis DIAGONAL
+       ). MUST be derived from the chassis DIAGONAL
        (sqrt((L/2)^2+(W/2)^2) = 0.1344 m), not the smaller face-normal half-width (0.095 m) -
        a real bug found in Phase 2 (docs/phase2-findings.md): an under-sized circular radius
        lets a planner think a squeeze is clear when the real square corners would clip.
@@ -249,7 +249,7 @@
     </plugin>
   </gazebo>
 
-  <!-- Ground-truth pose (Phase 4, IMPLEMENTATION_PLAN.md S1.2/S3; fix found building Phase 10):
+  <!-- Ground-truth pose (Phase 4, /S3; fix found building Phase 10):
        the pedestrian simulator needs the robot's real position, not /odom (odometry drift has no
        business leaking into how simulated pedestrians react to the robot). This used to be a
        PosePublisher plugin here (publish_model_pose=true) but that never actually publishes

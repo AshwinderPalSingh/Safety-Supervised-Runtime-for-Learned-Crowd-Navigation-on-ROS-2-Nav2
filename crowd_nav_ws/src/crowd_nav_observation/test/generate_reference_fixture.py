@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Generates the round-trip reference fixture for Phase 5's observation-builder test
-(IMPLEMENTATION_PLAN.md S4.1.2). Calls the ACTUAL reference repo's CADRL.rotate() (used
+"""Generates the round-trip reference fixture for Phase 5's observation-builder test.
+Calls the ACTUAL reference repo's CADRL.rotate() (used
 unchanged by SARL) on synthetic (self_state + one_human_state) rows, not a transcription of the
 formula - this is what makes the C++ test a check against the real implementation rather than
 against this project's own understanding of it.
 
 Run once, offline, against a checkout of tkkim-robot/Gazebo-CrowdNav (commit
 9cad128d124f86bafe48d2cd11b5eee74bec77d9, matching the checkpoint's source repo - see
-IMPLEMENTATION_PLAN.md S4.1.1). The output is checked into the repo
+). The output is checked into the repo
 (fixtures/sarl_rotate_reference.txt) so CI/the C++ test never needs network access or a
 reference-repo checkout at test time - only this generation step does, and it's not run as
 part of the normal build.
@@ -32,7 +32,7 @@ def main():
     from crowd_nav.policy.cadrl import CADRL  # noqa: E402
 
     policy = CADRL()
-    policy.kinematics = 'holonomic'  # matches the checkpoint (IMPLEMENTATION_PLAN.md S1.9)
+    policy.kinematics = 'holonomic'  # matches the checkpoint
 
     # Each case: (self_state 9-tuple, human_state 5-tuple), covering a spread of headings,
     # distances, and velocities so the round-trip test isn't just exercising one code path.

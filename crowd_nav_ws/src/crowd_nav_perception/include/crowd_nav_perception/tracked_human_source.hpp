@@ -10,7 +10,7 @@
 namespace crowd_nav_perception
 {
 
-// Documented stub, intentionally thin per IMPLEMENTATION_PLAN.md S6 - a real tracker-fed
+// Documented stub, intentionally thin per  - a real tracker-fed
 // HumanStateSource is out of scope for this project (see the brief), but the interface seam
 // exists so a real implementation could drop in later without touching anything that consumes
 // HumanStateSource.
@@ -30,7 +30,7 @@ public:
   std::vector<HumanObservation> getHumans(const rclcpp::Time & /*query_time*/) override
   {
     throw NotImplementedYet(
-      "TrackedHumanSource is a documented stub (IMPLEMENTATION_PLAN.md S4.1/S6) - "
+      "TrackedHumanSource is a documented stub - "
       "a real tracker-fed human source is out of this project's scope. Configured "
       "tracker topic was '" + tracker_topic_ + "'.");
   }

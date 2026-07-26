@@ -10,7 +10,7 @@ amcl:
     global_frame_id: "map"
     odom_frame_id: "odom"
     scan_topic: scan
-    # Reduced ~180deg FOV (IMPLEMENTATION_PLAN.md Phase 1/2): weaker rotational constraint on
+    # Reduced ~180deg FOV ( Phase 1/2): weaker rotational constraint on
     # scan matching than 360deg would give. Given a good initial pose (set below) rather than
     # relying on global localization, more particles than the Nav2 default (500/2000) buys
     # extra margin against the multi-modal distributions a repeating-shelf-bay layout can
@@ -88,7 +88,7 @@ controller_server:
       yaw_goal_tolerance: 0.15
       stateful: true
 
-    # This is the `policy_raw` eval config (IMPLEMENTATION_PLAN.md S3 Phase 7/S4.6, Phase 10's
+    # This is the `policy_raw` eval config ( Phase 7/S4.6, Phase 10's
     # eval matrix): CrowdNavController runs DummyAdapter (Phase 6) with hold-last-action rate
     # handling and an inference-latency watchdog, failing over to a genuinely embedded
     # nav2_mppi_controller::MPPIController (loaded via pluginlib, not reimplemented) on
@@ -104,7 +104,7 @@ controller_server:
       fallback_controller_plugin: "nav2_mppi_controller::MPPIController"
       # "sarl" (Phase 8) is now this project's real policy - "dummy" (Phase 6/7) remains a
       # permanent zero-checkpoint smoke-test fixture, selectable here but no longer the
-      # default (IMPLEMENTATION_PLAN.md S3 Phase 8).
+      # default ( Phase 8).
       adapter_type: "sarl"
       # Left empty deliberately: nav2_params.yaml is loaded as a raw params file with no
       # launch-substitution preprocessing, so "$(find-pkg-share ...)" would NOT be resolved
@@ -115,8 +115,7 @@ controller_server:
       # policy_adapter_config_path.
       onnx_model_path: ""
       # Leaves headroom inside the 0.05s tick period (controller_frequency: 20.0 above) for
-      # whatever else the tick does, including Phase 9's supervisor check once it exists
-      # (IMPLEMENTATION_PLAN.md S1.7/S4.6).
+      # whatever else the tick does, including Phase 9's supervisor check once it exists.
       watchdog_window_s: 0.03
       # Test-only diagnostic knob (S4.6), 0.0 = inert. Set > 0 only to manually exercise the
       # watchdog/failover path live; never a normal-operation value.
@@ -210,7 +209,7 @@ local_costmap:
       global_frame: odom
       robot_base_frame: base_footprint
       # Rolling window is the actual mitigation for the missing rear hemisphere
-      # (IMPLEMENTATION_PLAN.md Phase 2 / docs/phase2-findings.md): cells the sensor can never
+      # ( Phase 2 / docs/phase2-findings.md): cells the sensor can never
       # re-raytrace behind the robot don't get cleared by raytracing, but they DO fall outside
       # this window as the robot moves away, which is what actually bounds the damage. Kept
       # deliberately small (3x3m) relative to the room (~8x4m scaled depot) so stale marks
@@ -221,9 +220,10 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.03
-      # Must match robot_collision_radius in crowd_nav_description/urdf/nvis_3302ard.xacro (single source of truth, diagonal-based - IMPLEMENTATION_PLAN.md S4.3). Update both together.
+      # Must match robot_collision_radius in crowd_nav_description/urdf/nvis_3302ard.xacro
+      # (single source of truth, diagonal-based). Update both together.
       robot_radius: 0.14
-      # keepout_filter (Phase 3, IMPLEMENTATION_PLAN.md): stock nav2_costmap_2d::KeepoutFilter,
+      # keepout_filter (Phase 3): stock nav2_costmap_2d::KeepoutFilter,
       # fed by crowd_nav_zones' zone_manager node via costmap_filter_info_server + a dedicated
       # map_server instance (crowd_nav_zones/launch/zones.launch.py) - no custom collision
       # logic here, this plugin and its mask pipeline are entirely stock Nav2. Local costmap
@@ -269,13 +269,14 @@ global_costmap:
       update_frequency: 2.0
       publish_frequency: 1.0
       resolution: 0.03
-      # Must match robot_collision_radius in crowd_nav_description/urdf/nvis_3302ard.xacro (single source of truth, diagonal-based - IMPLEMENTATION_PLAN.md S4.3). Update both together.
+      # Must match robot_collision_radius in crowd_nav_description/urdf/nvis_3302ard.xacro
+      # (single source of truth, diagonal-based). Update both together.
       robot_radius: 0.14
       # Static-map-only global costmap (no dynamic obstacle_layer here) is deliberate, not an
       # oversight: it sidesteps the same rear-blind-spot problem entirely at the global level
       # by never marking dynamic scan returns onto a costmap that never rolls/resets.
       #
-      # keepout_filter here too, NOT just the local costmap (Phase 3, IMPLEMENTATION_PLAN.md):
+      # keepout_filter here too, NOT just the local costmap (Phase 3):
       # the phase's original plan text said "local costmap" only, but testing the actual
       # done-bar ("a zone blocks a corridor and MPPI visibly replans") found that local-only
       # doesn't work - NavFn (this costmap's planner) has no idea a zone exists, so it keeps

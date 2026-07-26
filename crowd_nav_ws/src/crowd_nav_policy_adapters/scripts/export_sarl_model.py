@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exports the real SARL value network (IMPLEMENTATION_PLAN.md S3 Phase 8 / S4.7) from the
+"""Exports the real SARL value network ( Phase 8 / S4.7) from the
 pinned checkpoint to ONNX, with a static-shape-free (dynamic batch + num_humans axes) graph -
 SarlAdapter builds an unpadded per-decision batch, not a fixed-max-humans one (S4.7's
 no-padding finding: the network's masked-softmax attention only excludes a human row when its

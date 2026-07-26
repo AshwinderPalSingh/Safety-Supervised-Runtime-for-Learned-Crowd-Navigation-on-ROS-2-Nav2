@@ -18,7 +18,7 @@ find_package(sensor_msgs REQUIRED)
 # SHARED: this workspace's CMake default is static, which lacks -fPIC and can't be linked into
 # a downstream .so - found the hard way when crowd_nav_controller (a pluginlib plugin, which
 # MUST be a real .so for dlopen()) failed to link against this package as a static dependency
-# (IMPLEMENTATION_PLAN.md S4.6/Phase 7 findings).
+# (Phase 7 findings).
 add_library(${PROJECT_NAME} SHARED
   src/ground_truth_human_source.cpp
   src/lidar_clustering.cpp

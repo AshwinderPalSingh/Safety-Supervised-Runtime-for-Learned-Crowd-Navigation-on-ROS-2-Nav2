@@ -17,7 +17,7 @@ struct PropagatedHuman
   double radius = 0.0;
 };
 
-// Reproduces multi_human_rl.py's compute_reward() exactly (IMPLEMENTATION_PLAN.md S4.7),
+// Reproduces multi_human_rl.py's compute_reward() exactly,
 // verified against the actual reference source, not memory. Operates on the ONE-STEP-AHEAD
 // propagated self state and propagated humans (candidate_propagation.hpp), matching the
 // reference's own `self.compute_reward(next_self_state, next_human_states)` call inside its

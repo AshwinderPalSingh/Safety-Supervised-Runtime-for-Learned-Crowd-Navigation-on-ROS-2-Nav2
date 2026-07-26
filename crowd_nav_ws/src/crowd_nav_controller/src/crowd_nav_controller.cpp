@@ -73,7 +73,7 @@ void CrowdNavController::configure(
   nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".robot_pose_topic",
     rclcpp::ParameterValue(std::string("/ground_truth/robot_pose")));
-  // This robot's real sensor geometry (IMPLEMENTATION_PLAN.md S4.8.1), not the SARL checkpoint's
+  // This robot's real sensor geometry, not the SARL checkpoint's
   // training-side D435I spec (85.2 deg / 12m) - a deliberate divergence, not a hand-typed
   // literal with no justification; see S4.8.1 for why. Defaults reflect the ~180 deg (S1's
   // confirmed LiDAR rear-hemisphere masking) / 8m (S3's already-deliberate conservative
@@ -141,7 +141,7 @@ void CrowdNavController::configure(
     node, plugin_name_ + ".onnx_model_path", rclcpp::ParameterValue(std::string()));
   nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".watchdog_window_s", rclcpp::ParameterValue(0.03));
-  // Test-only diagnostic knob, not a production parameter (IMPLEMENTATION_PLAN.md S4.6): when
+  // Test-only diagnostic knob, not a production parameter: when
   // > 0, every fresh policy decision sleeps this long before running, so the watchdog/failover
   // path can be exercised live against the real Nav2/Gazebo stack. Left at 0.0 does nothing.
   nav2_util::declare_parameter_if_not_declared(
@@ -152,7 +152,7 @@ void CrowdNavController::configure(
     node, plugin_name_ + ".min_linear_vel_mps", rclcpp::ParameterValue(-0.3));
   nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".max_angular_vel_rps", rclcpp::ParameterValue(2.0));
-  // Safety supervisor OOD thresholds (IMPLEMENTATION_PLAN.md S4.4/S4.8.5) - independently
+  // Safety supervisor OOD thresholds - independently
   // toggleable/tunable, not literals at the call site. forward_sim_dt_s and
   // max_commanded_speed_mps deliberately have NO separate parameter here - they reuse
   // action_space_config_.time_step_s and max_linear_vel_mps_ respectively (S4.8.3/S4.4), one
@@ -500,7 +500,7 @@ geometry_msgs::msg::TwistStamped CrowdNavController::computeVelocityCommands(
 
   const rclcpp::Time now = node_.lock()->get_clock()->now();
 
-  // Safety supervisor check (IMPLEMENTATION_PLAN.md S1.7/S4.6/S4.8): runs inside this same
+  // Safety supervisor check: runs inside this same
   // closure, after selectAction() produces a candidate, so its cost is covered by the watchdog
   // window (S1.7) rather than being a separate, unbounded step. Rejection returns a direct
   // controlled stop rather than delegating to fallback_controller_ - calling into the embedded

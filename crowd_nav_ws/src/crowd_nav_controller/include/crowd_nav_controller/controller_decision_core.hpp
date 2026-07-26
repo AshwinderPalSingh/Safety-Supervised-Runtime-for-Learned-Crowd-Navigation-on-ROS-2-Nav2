@@ -28,7 +28,7 @@ struct DecisionResult
   bool decision_attempted = false;
 };
 
-// Pure C++ (no live ROS node/costmap/tf/ONNX session needed) - IMPLEMENTATION_PLAN.md S4.6.
+// Pure C++ (no live ROS node/costmap/tf/ONNX session needed) - 
 // Owns exactly two responsibilities: (1) hold the last successful policy command across
 // controller ticks between policy decision points (the 4 Hz decision / 20 Hz control-loop rate
 // mismatch), and (2) the inference-latency watchdog, implemented as a genuine bounded wait

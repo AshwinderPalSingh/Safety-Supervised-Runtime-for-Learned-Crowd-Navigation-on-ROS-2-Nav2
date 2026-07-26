@@ -1,8 +1,7 @@
 # Phase 0 findings log
 
-Live log, per finding, per IMPLEMENTATION_PLAN.md's Phase 0. Each entry below was committed
-as it landed, not written up after the fact. See IMPLEMENTATION_PLAN.md for what each check
-is for and what "done" means.
+Live log, per finding, per Phase 0. Each entry below was committed
+as it landed, not written up after the fact.
 
 ## Environment survey (2026-07-21)
 
@@ -11,7 +10,7 @@ is for and what "done" means.
   Garden/Harmonic.
 - Python 3.10.12, no PyTorch installed system-wide.
 - No GPU (`nvidia-smi` absent) — confirms the CPU-only ONNX Runtime call in
-  IMPLEMENTATION_PLAN.md §1.3 is correct for this machine, not just in general.
+   is correct for this machine, not just in general.
 - `colcon` present. `cmake`/`g++`/`libboost-all-dev` present (needed to build Python-RVO2 for
   the CrowdNav checkpoint validation).
 - `ros-humble-nav2-*` (mppi-controller, amcl, costmap-2d, etc.) and `ros-humble-slam-toolbox`
@@ -60,7 +59,7 @@ robot can drive straight through what looks like a solid shelf row today between
 Doesn't change the scale conclusion, but worth knowing before assuming the depot is
 collision-realistic at any scale.
 
-**Rescale plan, revised — better than what IMPLEMENTATION_PLAN.md §1.1 anticipated.** The
+**Rescale plan, revised — better than originally anticipated.** The
 gz-sim mesh/collision-scale bugs I flagged (gz-sim#2656, ros_gz#587) are specific to `<mesh>`
 geometry. They're irrelevant here: `depot_collision` has no mesh, so a uniform rescale is just
 multiplying every collision primitive's pose and box/cylinder size by 0.27 directly in the SDF
@@ -116,7 +115,7 @@ installed package. Ran it headless:
   config's `max_acceleration: 1.0 m/s²` ramp-up, not a fluke number.
 
 **Phase 0 done, cleanly, on the last remaining item.** `gz_ros2_control` is confirmed to work
-headlessly end-to-end on this machine, matching IMPLEMENTATION_PLAN.md §1.6 exactly. All
+headlessly end-to-end on this machine. All
 background/demo processes killed and confirmed gone afterward.
 
 ## SARL checkpoint validation
@@ -254,16 +253,16 @@ standing recommendation.
   `with_global_state=true`; `[action_space]` `kinematics=holonomic`, `speed_samples=5`,
   `rotation_samples=16`, `sampling=exponential`, `query_env=true`
 - License lineage: MIT (upstream `vita-epfl/CrowdNav`); this specific file sourced from the
-  `tkkim-robot` fork, both credited in the project README per §7 of IMPLEMENTATION_PLAN.md.
+  `tkkim-robot` fork, both credited in the project README.
 - Validated: 0.96 success / 0.02 collision / 0.02 timeout, n=50, same seeds as the full-500
   run (deterministic per-index seeding, confirmed in `crowd_sim.py`).
 
-**Phase 0 is closed.** Every item in IMPLEMENTATION_PLAN.md's Phase 0 checklist is resolved:
+**Phase 0 is closed.** Every item in the Phase 0 checklist is resolved:
 world scale (measured, risk downgraded), ONNX Runtime vendor package (built, verified,
 version bumped), SARL checkpoint (chosen, validated, provenance recorded), gz_ros2_control
 (confirmed working headless), holonomic kinematics and headless-rendering risks (found,
-documented for Phase 1/8). See IMPLEMENTATION_PLAN.md for the Phase 12 entry this decision
-feeds into.
+documented for Phase 1/8). See the README's Future Work section for the Phase 12 entry this
+decision feeds into.
 
 ---
 
@@ -291,7 +290,7 @@ release, no external vendor-package dependency, exactly as planned in §1.3. `co
 inference through the vendored runtime. **Result: 10.0 for input [1,2,3,4], as expected. PASS.**
 
 **Real bug caught in the process, not hypothetical**: originally pinned ONNX Runtime 1.17.3
-(matches what IMPLEMENTATION_PLAN.md §1.3 says — "mature, well within Humble's window"). The
+(matching the original reasoning — "mature, well within Humble's window"). The
 trivial model, exported with this machine's PyTorch (2.13, current dynamo-based exporter),
 carries **ONNX IR version 10**. ONNX Runtime 1.17.3 hard-rejects it at load: *"Unsupported
 model IR version: 10, max supported IR version: 9"* — a crash (`Ort::Exception`, SIGABRT), not
@@ -313,4 +312,4 @@ should consume this vendor package via the classic `ament_export_include_directo
 `ament_export_libraries()` + `${crowd_nav_onnxruntime_vendor_INCLUDE_DIRS}` /
 `${crowd_nav_onnxruntime_vendor_LIBRARIES}` pattern, which is what's wired up now — not a
 modern namespaced `crowd_nav_onnxruntime_vendor::onnxruntime` target (that was the original
-design in IMPLEMENTATION_PLAN.md's sketch; doesn't work for a vendored prebuilt .so this way).
+design sketch; doesn't work for a vendored prebuilt .so this way).

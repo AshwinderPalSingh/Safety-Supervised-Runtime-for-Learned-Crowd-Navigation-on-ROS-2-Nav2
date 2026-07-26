@@ -7,7 +7,7 @@
     Phase 6: PolicyAdapter interface, candidate action-space generation + one-step propagation,
     ONNX shape validation, and DummyAdapter - proves the ONNX/adapter plumbing end to end
     against a trivial hand-written model before Phase 8's SarlAdapter touches real SARL search
-    logic (IMPLEMENTATION_PLAN.md S3 Phase 6, S4.3, S4.3.1).
+    logic ( Phase 6, S4.3, S4.3.1).
   </description>
   <maintainer email="ashwinder4377@gmail.com">ashwinder</maintainer>
   <license>MIT</license>

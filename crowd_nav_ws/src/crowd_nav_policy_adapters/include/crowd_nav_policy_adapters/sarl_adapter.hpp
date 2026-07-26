@@ -10,7 +10,7 @@
 namespace crowd_nav_policy_adapters
 {
 
-// Real SARL candidate-action search (IMPLEMENTATION_PLAN.md S3 Phase 8 / S4.7), reproducing
+// Real SARL candidate-action search ( Phase 8 / S4.7), reproducing
 // multi_human_rl.py's predict() exactly: propagate each candidate one step, rotate each human
 // row, batch through the real exported value network, add the immediate reward and
 // gamma-discounted network value, argmax.
@@ -24,7 +24,7 @@ namespace crowd_nav_policy_adapters
 // is mathematically identical to the reference's one-candidate-at-a-time convention, since
 // ValueNetwork.forward()'s attention/mean pooling has no cross-batch-element coupling).
 //
-// Zero-humans case (IMPLEMENTATION_PLAN.md S4.8.1, revised from S4.7's original stopgap):
+// Zero-humans case (revised from the original stopgap):
 // buildInputs() injects one synthetic placeholder human - positioned along the robot's current
 // heading, far away (ObservationBuilder::kDummyDistanceM), stationary, zero radius - rather
 // than returning an empty batch. This replicates the reference implementation's own

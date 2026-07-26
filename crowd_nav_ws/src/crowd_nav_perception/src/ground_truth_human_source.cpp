@@ -83,7 +83,7 @@ void GroundTruthHumanSource::ingestPedestrian(
 
 std::optional<HumanObservation> GroundTruthHumanSource::degrade(const HumanObservation & raw)
 {
-  // FOV/range restriction (IMPLEMENTATION_PLAN.md S4.8.1): what this robot's real sensor could
+  // FOV/range restriction: what this robot's real sensor could
   // ever perceive, not a confidence signal - excluded here without touching the dropout
   // accumulator below, since a human legitimately outside sensor coverage is normal operation.
   if (robot_pose_.has_value()) {

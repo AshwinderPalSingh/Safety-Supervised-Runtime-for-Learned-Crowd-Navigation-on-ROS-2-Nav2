@@ -6,7 +6,7 @@
   <description>
     Phase 9: forward-sim + costmap/keepout collision check, OOD detector (crowd size,
     proximity, relative speed, command limit, low perception confidence), per-cause
-    intervention logging (InterventionEvent). IMPLEMENTATION_PLAN.md S3 Phase 9 / S4.8. Pure
+    intervention logging (InterventionEvent). Pure
     C++ core (no live ROS node needed for its own logic) instantiated directly by
     crowd_nav_controller, sharing its exact costmap_ros_ instance rather than an independent
     subscription (S4.8.2).

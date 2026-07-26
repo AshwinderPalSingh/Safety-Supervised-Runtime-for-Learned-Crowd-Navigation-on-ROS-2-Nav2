@@ -2,7 +2,7 @@
 """Republishes the robot's ground-truth world-frame pose as a plain geometry_msgs/msg/Pose on
 /ground_truth/robot_pose, extracted from the bridged tf2_msgs/msg/TFMessage stream.
 
-Found while building Phase 10 (IMPLEMENTATION_PLAN.md S4.9 addendum), not assumed: the
+Found while building Phase 10 ( addendum), not assumed: the
 PosePublisher Gazebo plugin's <publish_model_pose>true</publish_model_pose> (with
 publish_link_pose left false, crowd_nav_description/urdf/nvis_3302ard.xacro) never actually
 published anything on this gz-sim version (6.18.0) - confirmed with `ign topic -e`, which timed

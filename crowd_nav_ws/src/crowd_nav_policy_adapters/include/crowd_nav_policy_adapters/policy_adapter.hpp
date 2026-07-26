@@ -14,7 +14,7 @@ using crowd_nav_observation::WorldState;
 
 // Declared input/output tensor names and shapes an adapter expects an ONNX session to have.
 // -1 in a shape entry means "dynamic, matches any extent at this position" (still checked for
-// dimension count) - see IMPLEMENTATION_PLAN.md S4.3.
+// dimension count) - see 
 struct ShapeSpec
 {
   std::vector<std::string> input_names;
@@ -42,7 +42,7 @@ struct Velocity2D
   double vy = 0.0;
 };
 
-// IMPLEMENTATION_PLAN.md S4.3. Config (adapter type, model path, schema version, action-space
+// Config (adapter type, model path, schema version, action-space
 // discretization, kinematics mode) lives entirely in YAML - no code changes to select or tune
 // an adapter. buildInputs() must be called before selectAction() for a given decision - an
 // adapter is free to stash whatever intermediate state (e.g. the candidate list) it needs to

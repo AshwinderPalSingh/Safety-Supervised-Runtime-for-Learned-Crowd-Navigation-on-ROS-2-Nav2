@@ -18,11 +18,11 @@ struct SupervisorResult
 {
   bool safe = true;
   // Unset iff safe. When !safe, this is the FIRST cause found - callers only need one reason to
-  // reject a tick, not an exhaustive list (IMPLEMENTATION_PLAN.md S4.8.5).
+  // reject a tick, not an exhaustive list.
   std::optional<InterventionCause> cause;
 };
 
-// IMPLEMENTATION_PLAN.md S3 Phase 9 / S4.8. Pure C++ (no live ROS node needed) - the same
+// Phase 9. Pure C++ (no live ROS node needed) - the same
 // "separate testable core, thin ROS-owning wrapper" split already used for
 // ControllerDecisionCore (S4.6) and GroundTruthHumanSource (S4.1/S4.2): depends on nav2_costmap_2d
 // and nav_msgs *types* (Costmap2D, OccupancyGrid), not a live node, subscription, or lifecycle -

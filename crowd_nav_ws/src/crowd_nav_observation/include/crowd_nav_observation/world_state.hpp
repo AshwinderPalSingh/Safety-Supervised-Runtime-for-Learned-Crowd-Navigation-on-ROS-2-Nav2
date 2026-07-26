@@ -9,7 +9,7 @@ namespace crowd_nav_observation
 {
 
 // Raw field layout verified against tkkim-robot/Gazebo-CrowdNav's FullState
-// (crowd_sim/envs/utils/state.py) - IMPLEMENTATION_PLAN.md S4.1.1. v_pref is a config parameter
+// (crowd_sim/envs/utils/state.py) -  v_pref is a config parameter
 // matching the training distribution, not measured from the real robot (same category as
 // policy_radius, S4.3/S7). theta is the robot's actual current heading.
 struct RobotSelfState

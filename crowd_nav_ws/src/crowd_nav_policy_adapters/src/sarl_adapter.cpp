@@ -34,7 +34,7 @@ TensorBundle SarlAdapter::buildInputs(const WorldState & state)
   last_candidates_ = buildCandidateActionSpace(config_, state.robot.v_pref);
   last_rewards_.assign(last_candidates_.size(), 0.0);
 
-  // Dummy-injection-on-empty (IMPLEMENTATION_PLAN.md S4.8.1): replicates the reference's own
+  // Dummy-injection-on-empty: replicates the reference's own
   // JointState convention of never letting predict() see a genuinely empty human list - masked-
   // softmax attention over zero rows is a divide-by-zero in the pooling denominator, an
   // architecturally undefined input, not merely an untrained one. Placed along the robot's

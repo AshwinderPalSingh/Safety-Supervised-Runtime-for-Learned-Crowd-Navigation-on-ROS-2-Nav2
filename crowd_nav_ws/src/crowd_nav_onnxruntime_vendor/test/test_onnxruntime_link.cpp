@@ -1,4 +1,4 @@
-// Phase 0 plumbing check (IMPLEMENTATION_PLAN.md Phase 0 / Phase 6): confirms the vendored
+// Phase 0 plumbing check ( Phase 0 / Phase 6): confirms the vendored
 // ONNX Runtime actually links and runs inference, not just that CMake found headers.
 // Model is a single Linear(4,1) with weight=1, bias=0, so output == sum(input) — a
 // known-answer check, not just "did it crash."

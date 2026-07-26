@@ -8,3 +8,4 @@ __pycache__/
 
 # Kept locally, not published to the repo.
 explanation.pdf
+IMPLEMENTATION_PLAN.md

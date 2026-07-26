@@ -11,7 +11,7 @@ namespace crowd_nav_observation
 
 // Produces SARL's raw (pre-rotation) flat vector: 9 self-state fields followed by
 // max_humans() blocks of 5 human fields each, ordered closest-to-robot first. Field order and
-// semantics verified against tkkim-robot/Gazebo-CrowdNav (IMPLEMENTATION_PLAN.md S4.1.1) - the
+// semantics verified against tkkim-robot/Gazebo-CrowdNav - the
 // rotation into egocentric features (SarlAdapter's job, Phase 8) is NOT performed here.
 //
 // Padding to a fixed max_humans is THIS PROJECT'S OWN ADDITION for a static-shape ONNX export -

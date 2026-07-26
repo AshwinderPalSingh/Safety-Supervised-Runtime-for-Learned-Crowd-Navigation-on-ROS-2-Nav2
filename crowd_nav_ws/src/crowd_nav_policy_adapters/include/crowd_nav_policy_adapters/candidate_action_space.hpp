@@ -9,7 +9,7 @@ namespace crowd_nav_policy_adapters
 {
 
 // Single source of truth for candidate-batch shape, loaded from policy_adapter.yaml
-// (IMPLEMENTATION_PLAN.md S4.3.1) - consumed by both DummyAdapter (Phase 6) and SarlAdapter
+// - consumed by both DummyAdapter (Phase 6) and SarlAdapter
 // (Phase 8), and by generate_dummy_model.py at model-generation time. Values verified against
 // the pinned checkpoint's own crowd_nav/configs/policy.config [action_space] and env.config
 // [env] sections, not memorized - kinematics is always holonomic (the only mode the pinned

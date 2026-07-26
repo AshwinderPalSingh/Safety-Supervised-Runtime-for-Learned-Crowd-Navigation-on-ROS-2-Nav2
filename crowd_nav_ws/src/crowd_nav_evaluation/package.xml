@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>
     Phase 10: seeded scenario suite, harness runner, metrics collector, CSV + plots
-    (IMPLEMENTATION_PLAN.md S3 Phase 10 / S4.9). Each episode runs as its own subprocess with a
+    ( Phase 10 / S4.9). Each episode runs as its own subprocess with a
     fresh ROS graph; outcome/metrics are determined from ground truth, never the robot's own
     perception, matching this project's established verification discipline.
   </description>

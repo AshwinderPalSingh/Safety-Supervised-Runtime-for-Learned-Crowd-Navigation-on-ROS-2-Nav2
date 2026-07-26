@@ -25,7 +25,7 @@ This document is written incrementally as the audit proceeds, not compiled after
 | §4 | Documentation drift | none | Spot-checked, none found |
 | §5 | Code quality | none | None found at reasonable-depth pass |
 | §6 | Post-fix re-run integrity: is the 142-episode result a single clean pass or stitched with an aborted partial run? | none | Confirmed clean, 3 independent checks; no re-run needed |
-| §7 | Narrative reconciliation: does every interpretive claim about Phase 10 still match the corrected CSVs? | SIGNIFICANT | 1 claim reversed (headline collision-rate finding + its timing explanation), 1 claim corrected in scope (noise-sweep cliff location), 1 explanation removed (the 4-of-6 detection-margin story); all fixed across `docs/phase10-findings.md`, `README.md`, `IMPLEMENTATION_PLAN.md` |
+| §7 | Narrative reconciliation: does every interpretive claim about Phase 10 still match the corrected CSVs? | SIGNIFICANT | 1 claim reversed (headline collision-rate finding + its timing explanation), 1 claim corrected in scope (noise-sweep cliff location), 1 explanation removed (the 4-of-6 detection-margin story); all fixed across `docs/phase10-findings.md`, `README.md`,  |
 
 Two CRITICAL findings (§1.1, §1.3) and one SIGNIFICANT finding (§3.5, which follows directly
 from §1.3) drove Part 2. §7's reconciliation pass found the corrected data itself was already
@@ -412,12 +412,12 @@ found.**
 ## 4. Documentation drift
 
 Spot-checked rather than re-verified line-by-line (the plan document alone is 2000+ lines) -
-focused on claims most likely to have drifted: test counts (`IMPLEMENTATION_PLAN.md`'s "60 tests
+focused on claims most likely to have drifted: test counts ( "60 tests
 total" claim - re-run `colcon test-result --all` directly, confirmed still exactly 60, 0
 failures), phase-completion status (README's status framing, confirmed consistent - "11
 complete" appears in both the Future Work section and Build history section, no stale "Phase N
 of 12" leftover from an earlier revision), and a repo-wide `TODO`/`FIXME`/`XXX` sweep across
-`IMPLEMENTATION_PLAN.md`, `README.md`, and every `docs/phase*-findings.md` (zero matches - no
+, `README.md`, and every `docs/phase*-findings.md` (zero matches - no
 forgotten markers). The one already-known historical drift instance (§1.5's "no surprises"
 claim, corrected in Phase 3) is itself documented as a past correction, not a currently-stale
 claim. **No new documentation drift found** at this level of check; a full claim-by-claim

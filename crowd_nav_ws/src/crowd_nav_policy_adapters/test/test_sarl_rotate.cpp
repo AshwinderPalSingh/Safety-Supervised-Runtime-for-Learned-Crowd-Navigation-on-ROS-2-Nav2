@@ -1,7 +1,6 @@
 // Verifies the PRODUCTION rotate() (used by SarlAdapter, Phase 8) against the same checked-in
 // reference fixture Phase 5's round-trip test used - generated from the real
-// tkkim-robot/Gazebo-CrowdNav CADRL.rotate(), not a transcription (IMPLEMENTATION_PLAN.md
-// S4.1.2/S4.7).
+// tkkim-robot/Gazebo-CrowdNav CADRL.rotate(), not a transcription.
 #include <cmath>
 #include <fstream>
 #include <sstream>

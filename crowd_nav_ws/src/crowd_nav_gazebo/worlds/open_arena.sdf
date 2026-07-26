@@ -1,7 +1,7 @@
 <?xml version="1.0" ?>
 <sdf version="1.7">
   <world name="crowd_nav_open_arena">
-    <!-- IMPLEMENTATION_PLAN.md S4.9: the "open-arena" scenario family needs a real Gazebo world
+    <!-- : the "open-arena" scenario family needs a real Gazebo world
          with SOME static geometry (for AMCL scan-matching to work at all - a truly empty,
          boundless plane like worlds/empty.sdf gives AMCL nothing to localize against and was
          never intended as an AMCL-navigable world, only a SLAM-demo one, S6). This is the exact

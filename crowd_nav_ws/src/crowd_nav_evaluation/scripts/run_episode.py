@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runs exactly ONE evaluation episode (IMPLEMENTATION_PLAN.md S4.9): launches the ROS2/Gazebo
+"""Runs exactly ONE evaluation episode: launches the ROS2/Gazebo
 stack, waits for it to become ready, optionally adds a keep-out zone, runs the in-episode
 monitor to a terminal outcome, tears the stack down, and prints one JSON line with the result.
 Designed to be invoked as a subprocess per episode (run_matrix.py does this) so each episode

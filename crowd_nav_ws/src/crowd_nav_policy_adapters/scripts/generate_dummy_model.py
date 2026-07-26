@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates Phase 6's trivial ONNX model (IMPLEMENTATION_PLAN.md S4.3.1/S3 Phase 6).
+"""Generates Phase 6's trivial ONNX model.
 
 Reads config/policy_adapter.yaml - the SAME file DummyAdapter reads at construction time - so
 the model's declared input/output shape is computed from config, never hand-typed as a literal

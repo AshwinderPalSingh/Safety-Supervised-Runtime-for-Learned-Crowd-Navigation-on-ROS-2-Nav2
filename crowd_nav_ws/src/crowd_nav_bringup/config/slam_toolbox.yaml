@@ -14,7 +14,7 @@ slam_toolbox:
     scan_topic: /scan
     mode: mapping
 
-    # Reduced ~180deg FOV (IMPLEMENTATION_PLAN.md Phase 1/2): same rationale as AMCL's bumped
+    # Reduced ~180deg FOV ( Phase 1/2): same rationale as AMCL's bumped
     # particle count - weaker scan-matching constraint than 360deg, so lean slightly more on
     # odometry between scans rather than trusting scan matching alone in ambiguous/symmetric
     # regions (the repeating shelf bays).

@@ -1,4 +1,4 @@
-"""Phase 4 pedestrian simulation bringup (IMPLEMENTATION_PLAN.md S1.2/S3). Always launches the
+"""Phase 4 pedestrian simulation bringup. Always launches the
 deterministic pedestrian_sim_node.py plus a bridge for the robot's ground-truth pose (needed by
 'reactive' mode regardless of mirroring).
 

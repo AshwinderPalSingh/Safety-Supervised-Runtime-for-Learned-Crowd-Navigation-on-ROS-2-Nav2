@@ -8,7 +8,7 @@
     handling, an inference-latency watchdog structured to also cover Phase 9's supervisor
     check, failover to a genuinely embedded nav2_core::Controller fallback loaded via
     pluginlib, and a config-selected PolicyAdapter (dummy or sarl) fed by live perception
-    (IMPLEMENTATION_PLAN.md S3 Phase 7/8, S4.6/S4.7).
+    ( Phase 7/8, S4.6/S4.7).
   </description>
   <maintainer email="ashwinder4377@gmail.com">ashwinder</maintainer>
   <license>MIT</license>

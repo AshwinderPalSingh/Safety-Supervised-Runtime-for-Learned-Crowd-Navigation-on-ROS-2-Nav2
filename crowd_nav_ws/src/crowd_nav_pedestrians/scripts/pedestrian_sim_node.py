@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 4 pedestrian simulator (IMPLEMENTATION_PLAN.md S1.2/S3, rescoped in v1.7 - HuNav
+"""Phase 4 pedestrian simulator (rescoped in v1.7 - HuNav
 dropped). A single deterministic social-force model, not two separate mechanisms:
 reactive/non_reactive is a config flag (params.mode) that only toggles whether the robot's
 ground-truth position contributes a repulsion force, not a different code path.
