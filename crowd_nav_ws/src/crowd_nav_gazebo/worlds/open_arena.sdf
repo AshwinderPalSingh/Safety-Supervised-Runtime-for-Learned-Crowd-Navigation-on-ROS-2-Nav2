@@ -20,13 +20,46 @@
       <render_engine>ogre2</render_engine>
     </plugin>
 
+    <!-- Same treatment as depot_scaled.sdf's own reskin (identical room footprint, see the
+         comment above): a bare ogre2 default ambient/background otherwise renders this as a
+         flat white box, arguably even more washed-out than depot given open_arena has no
+         internal geometry at all to break up the flatness. -->
+    <scene>
+      <ambient>0.40 0.40 0.42 1</ambient>
+      <background>0.55 0.60 0.65 1</background>
+      <shadows>true</shadows>
+      <grid>false</grid>
+    </scene>
+
     <light type="directional" name="sun">
       <cast_shadows>true</cast_shadows>
       <pose>0 0 10 0 0 0</pose>
-      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <diffuse>0.85 0.82 0.78 1</diffuse>
       <specular>0.2 0.2 0.2 1</specular>
       <attenuation><range>1000</range><constant>0.9</constant><linear>0.01</linear><quadratic>0.001</quadratic></attenuation>
       <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <light type="point" name="ceiling_light_1">
+      <pose>-2.5 0 2.3 0 0 0</pose>
+      <diffuse>1.0 0.95 0.85 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation><range>8</range><constant>0.3</constant><linear>0.2</linear><quadratic>0.05</quadratic></attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+    <light type="point" name="ceiling_light_2">
+      <pose>0.5 0 2.3 0 0 0</pose>
+      <diffuse>1.0 0.95 0.85 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation><range>8</range><constant>0.3</constant><linear>0.2</linear><quadratic>0.05</quadratic></attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+    <light type="point" name="ceiling_light_3">
+      <pose>3.2 0 2.3 0 0 0</pose>
+      <diffuse>1.0 0.95 0.85 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation><range>8</range><constant>0.3</constant><linear>0.2</linear><quadratic>0.05</quadratic></attenuation>
+      <cast_shadows>false</cast_shadows>
     </light>
 
     <model name="ground_plane">
@@ -38,7 +71,7 @@
         </collision>
         <visual name="visual">
           <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
-          <material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material>
+          <material><ambient>0.55 0.57 0.60 1</ambient><diffuse>0.55 0.57 0.60 1</diffuse><specular>0.25 0.25 0.28 1</specular></material>
         </visual>
       </link>
     </model>
@@ -53,6 +86,7 @@
         <visual name="wall_south_visual">
           <pose>0.00000 -2.05548 1.21500 0 0 0</pose>
           <geometry><box><size>8.14509 0.02160 2.43000</size></box></geometry>
+          <material><ambient>0.80 0.78 0.74 1</ambient><diffuse>0.80 0.78 0.74 1</diffuse><specular>0.15 0.15 0.15 1</specular></material>
         </visual>
         <collision name="wall_north_collision">
           <pose>0.00000 1.96762 1.21500 0 0 0</pose>
@@ -61,6 +95,7 @@
         <visual name="wall_north_visual">
           <pose>0.00000 1.96762 1.21500 0 0 0</pose>
           <geometry><box><size>8.14509 0.02160 2.43000</size></box></geometry>
+          <material><ambient>0.80 0.78 0.74 1</ambient><diffuse>0.80 0.78 0.74 1</diffuse><specular>0.15 0.15 0.15 1</specular></material>
         </visual>
         <collision name="wall_west_collision">
           <pose>-4.05000 0.00000 1.21500 0 0 0</pose>
@@ -69,6 +104,7 @@
         <visual name="wall_west_visual">
           <pose>-4.05000 0.00000 1.21500 0 0 0</pose>
           <geometry><box><size>0.02160 4.14720 2.43000</size></box></geometry>
+          <material><ambient>0.80 0.78 0.74 1</ambient><diffuse>0.80 0.78 0.74 1</diffuse><specular>0.15 0.15 0.15 1</specular></material>
         </visual>
         <collision name="wall_east_collision">
           <pose>4.05000 0.00000 1.21500 0 0 0</pose>
@@ -77,6 +113,7 @@
         <visual name="wall_east_visual">
           <pose>4.05000 0.00000 1.21500 0 0 0</pose>
           <geometry><box><size>0.02160 4.14720 2.43000</size></box></geometry>
+          <material><ambient>0.80 0.78 0.74 1</ambient><diffuse>0.80 0.78 0.74 1</diffuse><specular>0.15 0.15 0.15 1</specular></material>
         </visual>
       </link>
     </model>

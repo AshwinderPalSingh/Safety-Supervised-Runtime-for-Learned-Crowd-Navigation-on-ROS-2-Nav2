@@ -42,9 +42,25 @@ MARKER_SDF_TEMPLATE = """<?xml version="1.0"?>
     which is exactly the two properties this needs. -->
     <static>true</static>
     <link name="link">
-      <visual name="visual">
-        <geometry><cylinder><radius>{radius}</radius><length>1.6</length></cylinder></geometry>
-        <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+      <!-- Two visuals (torso + head) over the one unchanged collision cylinder below - a plain
+      flat-red pole reads as a traffic pylon, not a person; a torso/head silhouette in a muted
+      clothing tone reads as one at a glance without changing what the robot's LiDAR or contact
+      response actually sees (visual and collision geometry are independent per-link in SDF). -->
+      <visual name="torso_visual">
+        <pose>0 0 -0.075 0 0 0</pose>
+        <geometry><cylinder><radius>{radius}</radius><length>1.35</length></cylinder></geometry>
+        <material>
+          <ambient>{color} 1</ambient><diffuse>{color} 1</diffuse>
+          <specular>0.1 0.1 0.1 1</specular>
+        </material>
+      </visual>
+      <visual name="head_visual">
+        <pose>0 0 0.68 0 0 0</pose>
+        <geometry><sphere><radius>0.13</radius></sphere></geometry>
+        <material>
+          <ambient>0.80 0.68 0.58 1</ambient><diffuse>0.80 0.68 0.58 1</diffuse>
+          <specular>0.05 0.05 0.05 1</specular>
+        </material>
       </visual>
       <collision name="collision">
         <geometry><cylinder><radius>{radius}</radius><length>1.6</length></cylinder></geometry>
@@ -52,6 +68,17 @@ MARKER_SDF_TEMPLATE = """<?xml version="1.0"?>
     </link>
   </model>
 </sdf>"""
+
+# Muted, plausible clothing tones cycled per pedestrian index - deliberately not a single
+# saturated color repeated N times (reads as identical traffic cones, not a crowd of people).
+_MARKER_COLORS = [
+    "0.20 0.29 0.45",  # navy jacket
+    "0.35 0.24 0.20",  # brown jacket
+    "0.22 0.34 0.24",  # olive/hunter green
+    "0.45 0.42 0.38",  # tan/khaki
+    "0.30 0.30 0.32",  # charcoal
+    "0.50 0.18 0.18",  # muted brick red
+]
 
 
 class ActorMirrorNode(Node):
@@ -98,7 +125,8 @@ class ActorMirrorNode(Node):
             req = SpawnEntity.Request()
             req.entity_factory.name = f'pedestrian_marker_{i}'
             req.entity_factory.sdf = MARKER_SDF_TEMPLATE.format(
-                name=f'pedestrian_marker_{i}', radius=self.body_radius)
+                name=f'pedestrian_marker_{i}', radius=self.body_radius,
+                color=_MARKER_COLORS[i % len(_MARKER_COLORS)])
             req.entity_factory.pose = Pose()
             req.entity_factory.pose.position.z = self.marker_z
             self.spawn_client.call_async(req)

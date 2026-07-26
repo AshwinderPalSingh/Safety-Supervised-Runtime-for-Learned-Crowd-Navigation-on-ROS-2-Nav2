@@ -17,13 +17,51 @@
       <render_engine>ogre2</render_engine>
     </plugin>
 
+    <!-- Visual-only, zero physics/collision impact: no <scene> block existed before, so
+         everything rendered under ogre2's bare default ambient/background (the flat, washed-out
+         "grey primitives floating in a void" look). Raising ambient and giving the sky a
+         deliberate industrial-interior tone fixes that without touching a single collision
+         shape or evaluation-relevant coordinate. -->
+    <scene>
+      <ambient>0.40 0.40 0.42 1</ambient>
+      <background>0.55 0.60 0.65 1</background>
+      <shadows>true</shadows>
+      <grid>false</grid>
+    </scene>
+
     <light type="directional" name="sun">
       <cast_shadows>true</cast_shadows>
       <pose>0 0 10 0 0 0</pose>
-      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <diffuse>0.85 0.82 0.78 1</diffuse>
       <specular>0.2 0.2 0.2 1</specular>
       <attenuation><range>1000</range><constant>0.9</constant><linear>0.01</linear><quadratic>0.001</quadratic></attenuation>
       <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Three warm, non-shadow-casting point lights standing in for ceiling fixtures along the
+         room's long axis - fill light only (the sun above is still the sole shadow-casting
+         light, so this doesn't multiply shadow-render cost), purely to break up the single-flat-
+         directional-light look that read as a CAD viewport rather than an indoor space. -->
+    <light type="point" name="ceiling_light_1">
+      <pose>-2.5 0 2.3 0 0 0</pose>
+      <diffuse>1.0 0.95 0.85 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation><range>8</range><constant>0.3</constant><linear>0.2</linear><quadratic>0.05</quadratic></attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+    <light type="point" name="ceiling_light_2">
+      <pose>0.5 0 2.3 0 0 0</pose>
+      <diffuse>1.0 0.95 0.85 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation><range>8</range><constant>0.3</constant><linear>0.2</linear><quadratic>0.05</quadratic></attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+    <light type="point" name="ceiling_light_3">
+      <pose>3.2 0 2.3 0 0 0</pose>
+      <diffuse>1.0 0.95 0.85 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation><range>8</range><constant>0.3</constant><linear>0.2</linear><quadratic>0.05</quadratic></attenuation>
+      <cast_shadows>false</cast_shadows>
     </light>
 
     <model name="ground_plane">
@@ -35,7 +73,7 @@
         </collision>
         <visual name="visual">
           <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
-          <material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material>
+          <material><ambient>0.55 0.57 0.60 1</ambient><diffuse>0.55 0.57 0.60 1</diffuse><specular>0.25 0.25 0.28 1</specular></material>
         </visual>
       </link>
     </model>
@@ -47,7 +85,7 @@
         <visual name='wall1_visual'>
           <pose>0.00000 -2.05548 1.21500 0 0 0</pose>
           <geometry><box><size>8.14509 0.02160 2.43000</size></box></geometry>
-          <material><ambient>0.55 0.55 0.58 1</ambient><diffuse>0.55 0.55 0.58 1</diffuse></material>
+          <material><ambient>0.80 0.78 0.74 1</ambient><diffuse>0.80 0.78 0.74 1</diffuse><specular>0.15 0.15 0.15 1</specular></material>
         </visual>
 
         <collision name='wall1_collision'>
@@ -58,7 +96,7 @@
         <visual name='wall2_visual'>
           <pose>0.00000 1.96762 1.21500 0 0 0</pose>
           <geometry><box><size>8.14509 0.02160 2.43000</size></box></geometry>
-          <material><ambient>0.55 0.55 0.58 1</ambient><diffuse>0.55 0.55 0.58 1</diffuse></material>
+          <material><ambient>0.80 0.78 0.74 1</ambient><diffuse>0.80 0.78 0.74 1</diffuse><specular>0.15 0.15 0.15 1</specular></material>
         </visual>
 
         <collision name='wall2_collision'>
@@ -69,7 +107,7 @@
         <visual name='wall3_visual'>
           <pose>-4.05000 0.00000 1.21500 0 0 0</pose>
           <geometry><box><size>0.02160 4.14720 2.43000</size></box></geometry>
-          <material><ambient>0.55 0.55 0.58 1</ambient><diffuse>0.55 0.55 0.58 1</diffuse></material>
+          <material><ambient>0.80 0.78 0.74 1</ambient><diffuse>0.80 0.78 0.74 1</diffuse><specular>0.15 0.15 0.15 1</specular></material>
         </visual>
 
         <collision name='wall3_collision'>
@@ -80,7 +118,7 @@
         <visual name='wall4_visual'>
           <pose>4.05000 0.00000 1.21500 0 0 0</pose>
           <geometry><box><size>0.02160 4.14720 2.43000</size></box></geometry>
-          <material><ambient>0.55 0.55 0.58 1</ambient><diffuse>0.55 0.55 0.58 1</diffuse></material>
+          <material><ambient>0.80 0.78 0.74 1</ambient><diffuse>0.80 0.78 0.74 1</diffuse><specular>0.15 0.15 0.15 1</specular></material>
         </visual>
 
         <collision name='wall4_collision'>
@@ -91,7 +129,7 @@
         <visual name='shelf1_visual'>
           <pose>0.39587 -0.00474 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf1_collision'>
@@ -102,7 +140,7 @@
         <visual name='shelf2_visual'>
           <pose>0.71504 -0.00474 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf2_collision'>
@@ -113,7 +151,7 @@
         <visual name='shelf3_visual'>
           <pose>1.43767 -0.00474 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf3_collision'>
@@ -124,7 +162,7 @@
         <visual name='shelf4_visual'>
           <pose>1.75670 -0.00474 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf4_collision'>
@@ -135,7 +173,7 @@
         <visual name='shelf5_visual'>
           <pose>2.45047 -0.00474 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf5_collision'>
@@ -146,7 +184,7 @@
         <visual name='shelf6_visual'>
           <pose>2.76966 -0.00474 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf6_collision'>
@@ -157,7 +195,7 @@
         <visual name='shelf7_visual'>
           <pose>0.39587 0.69293 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf7_collision'>
@@ -168,7 +206,7 @@
         <visual name='shelf8_visual'>
           <pose>0.71504 0.69293 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf8_collision'>
@@ -179,7 +217,7 @@
         <visual name='shelf9_visual'>
           <pose>1.43767 0.69293 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf9_collision'>
@@ -190,7 +228,7 @@
         <visual name='shelf10_visual'>
           <pose>1.75670 0.69293 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf10_collision'>
@@ -201,7 +239,7 @@
         <visual name='shelf11_visual'>
           <pose>2.45047 0.69293 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf11_collision'>
@@ -212,7 +250,7 @@
         <visual name='shelf12_visual'>
           <pose>2.76966 0.69293 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf12_collision'>
@@ -223,7 +261,7 @@
         <visual name='shelf13_visual'>
           <pose>0.39587 1.39042 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf13_collision'>
@@ -234,7 +272,7 @@
         <visual name='shelf14_visual'>
           <pose>0.71504 1.39042 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf14_collision'>
@@ -245,7 +283,7 @@
         <visual name='shelf15_visual'>
           <pose>1.43767 1.39042 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf15_collision'>
@@ -256,7 +294,7 @@
         <visual name='shelf16_visual'>
           <pose>1.75670 1.39042 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf16_collision'>
@@ -267,7 +305,7 @@
         <visual name='shelf17_visual'>
           <pose>2.45047 1.39042 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf17_collision'>
@@ -278,7 +316,7 @@
         <visual name='shelf18_visual'>
           <pose>2.76966 1.39042 0.13500 0 0 0</pose>
           <geometry><cylinder><radius>0.00810</radius><length>0.27000</length></cylinder></geometry>
-          <material><ambient>0.35 0.35 0.35 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse></material>
+          <material><ambient>0.85 0.42 0.10 1</ambient><diffuse>0.85 0.42 0.10 1</diffuse><specular>0.35 0.30 0.20 1</specular></material>
         </visual>
 
         <collision name='shelf18_collision'>
@@ -289,7 +327,7 @@
         <visual name='pilar1_visual'>
           <pose>-2.03585 0.97608 0.27000 0 0 0</pose>
           <geometry><box><size>0.12555 0.12555 0.54000</size></box></geometry>
-          <material><ambient>0.55 0.55 0.58 1</ambient><diffuse>0.55 0.55 0.58 1</diffuse></material>
+          <material><ambient>0.60 0.60 0.62 1</ambient><diffuse>0.60 0.60 0.62 1</diffuse><specular>0.20 0.20 0.20 1</specular></material>
         </visual>
 
         <collision name='pilar1_collision'>
@@ -297,10 +335,30 @@
           <geometry><box><size>0.12555 0.12555 0.54000</size></box></geometry>
         </collision>
 
+        <!-- Visual-only hazard-stripe bands (yellow/black/yellow), no matching <collision> - a
+             hair proud of the pillar's own 0.12555 footprint (0.15) so the coplanar faces don't
+             z-fight against the pillar's base material. Standard warehouse column marking,
+             purely cosmetic, doesn't move or resize the pillar's actual collision box. -->
+        <visual name='pilar1_hazard_band1'>
+          <pose>-2.03585 0.97608 0.09000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.14000</size></box></geometry>
+          <material><ambient>0.95 0.75 0.05 1</ambient><diffuse>0.95 0.75 0.05 1</diffuse></material>
+        </visual>
+        <visual name='pilar1_hazard_band2'>
+          <pose>-2.03585 0.97608 0.23000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.10000</size></box></geometry>
+          <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material>
+        </visual>
+        <visual name='pilar1_hazard_band3'>
+          <pose>-2.03585 0.97608 0.35000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.10000</size></box></geometry>
+          <material><ambient>0.95 0.75 0.05 1</ambient><diffuse>0.95 0.75 0.05 1</diffuse></material>
+        </visual>
+
         <visual name='pilar2_visual'>
           <pose>2.01353 0.97608 0.27000 0 0 0</pose>
           <geometry><box><size>0.12555 0.12555 0.54000</size></box></geometry>
-          <material><ambient>0.55 0.55 0.58 1</ambient><diffuse>0.55 0.55 0.58 1</diffuse></material>
+          <material><ambient>0.60 0.60 0.62 1</ambient><diffuse>0.60 0.60 0.62 1</diffuse><specular>0.20 0.20 0.20 1</specular></material>
         </visual>
 
         <collision name='pilar2_collision'>
@@ -308,10 +366,26 @@
           <geometry><box><size>0.12555 0.12555 0.54000</size></box></geometry>
         </collision>
 
+        <visual name='pilar2_hazard_band1'>
+          <pose>2.01353 0.97608 0.09000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.14000</size></box></geometry>
+          <material><ambient>0.95 0.75 0.05 1</ambient><diffuse>0.95 0.75 0.05 1</diffuse></material>
+        </visual>
+        <visual name='pilar2_hazard_band2'>
+          <pose>2.01353 0.97608 0.23000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.10000</size></box></geometry>
+          <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material>
+        </visual>
+        <visual name='pilar2_hazard_band3'>
+          <pose>2.01353 0.97608 0.35000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.10000</size></box></geometry>
+          <material><ambient>0.95 0.75 0.05 1</ambient><diffuse>0.95 0.75 0.05 1</diffuse></material>
+        </visual>
+
         <visual name='pilar3_visual'>
           <pose>-2.03585 -1.04914 0.27000 0 0 0</pose>
           <geometry><box><size>0.12555 0.12555 0.54000</size></box></geometry>
-          <material><ambient>0.55 0.55 0.58 1</ambient><diffuse>0.55 0.55 0.58 1</diffuse></material>
+          <material><ambient>0.60 0.60 0.62 1</ambient><diffuse>0.60 0.60 0.62 1</diffuse><specular>0.20 0.20 0.20 1</specular></material>
         </visual>
 
         <collision name='pilar3_collision'>
@@ -319,16 +393,48 @@
           <geometry><box><size>0.12555 0.12555 0.54000</size></box></geometry>
         </collision>
 
+        <visual name='pilar3_hazard_band1'>
+          <pose>-2.03585 -1.04914 0.09000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.14000</size></box></geometry>
+          <material><ambient>0.95 0.75 0.05 1</ambient><diffuse>0.95 0.75 0.05 1</diffuse></material>
+        </visual>
+        <visual name='pilar3_hazard_band2'>
+          <pose>-2.03585 -1.04914 0.23000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.10000</size></box></geometry>
+          <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material>
+        </visual>
+        <visual name='pilar3_hazard_band3'>
+          <pose>-2.03585 -1.04914 0.35000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.10000</size></box></geometry>
+          <material><ambient>0.95 0.75 0.05 1</ambient><diffuse>0.95 0.75 0.05 1</diffuse></material>
+        </visual>
+
         <visual name='pilar4_visual'>
           <pose>2.01353 -1.04914 0.27000 0 0 0</pose>
           <geometry><box><size>0.12555 0.12555 0.54000</size></box></geometry>
-          <material><ambient>0.55 0.55 0.58 1</ambient><diffuse>0.55 0.55 0.58 1</diffuse></material>
+          <material><ambient>0.60 0.60 0.62 1</ambient><diffuse>0.60 0.60 0.62 1</diffuse><specular>0.20 0.20 0.20 1</specular></material>
         </visual>
 
         <collision name='pilar4_collision'>
           <pose>2.01353 -1.04914 0.27000 0 0 0</pose>
           <geometry><box><size>0.12555 0.12555 0.54000</size></box></geometry>
         </collision>
+
+        <visual name='pilar4_hazard_band1'>
+          <pose>2.01353 -1.04914 0.09000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.14000</size></box></geometry>
+          <material><ambient>0.95 0.75 0.05 1</ambient><diffuse>0.95 0.75 0.05 1</diffuse></material>
+        </visual>
+        <visual name='pilar4_hazard_band2'>
+          <pose>2.01353 -1.04914 0.23000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.10000</size></box></geometry>
+          <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material>
+        </visual>
+        <visual name='pilar4_hazard_band3'>
+          <pose>2.01353 -1.04914 0.35000 0 0 0</pose>
+          <geometry><box><size>0.15000 0.15000 0.10000</size></box></geometry>
+          <material><ambient>0.95 0.75 0.05 1</ambient><diffuse>0.95 0.75 0.05 1</diffuse></material>
+        </visual>
       </link>
     </model>
   </world>
