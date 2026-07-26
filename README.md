@@ -24,7 +24,7 @@ losses both.**
 </div>
 
 ---
-![Demo](assets/demo.gif)
+![Demo](docs/readme.gif)
 
 ## Overview
 
