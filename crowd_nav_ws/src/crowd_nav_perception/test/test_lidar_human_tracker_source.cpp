@@ -84,6 +84,9 @@ TEST(LidarHumanTrackerSource, HumanWidthClusterProducesADetectionInMapFrame)
 {
   auto buffer = makeBufferWithStaticTranslation(1.0, 2.0);
   LidarPerceptionParams params;
+  // Verifying the width-filter + TF-transform + centroid math here, not the displacement gate
+  // (see the dedicated Stationary/MovingCluster tests below) - decoupled explicitly.
+  params.min_displacement_m = 0.0;
   LidarHumanTrackerSource source(params, buffer);
 
   auto cluster = makeHumanWidthCluster(0.3, -0.15);
@@ -149,6 +152,10 @@ TEST(LidarHumanTrackerSource, TrackPersistsAcrossConsecutiveScansOfTheSameStatio
 {
   auto buffer = makeBufferWithStaticTranslation(0.0, 0.0);
   LidarPerceptionParams params;
+  // ID-persistence across scans is what this test checks, orthogonal to the displacement gate -
+  // see StationaryClusterAcrossManyScansIsNeverReportedAsAHuman below for the gate itself,
+  // exercised with default params (the actual depot-pillar scenario this fix targets).
+  params.min_displacement_m = 0.0;
   LidarHumanTrackerSource source(params, buffer);
 
   auto cluster = makeHumanWidthCluster(0.3, -0.15);
@@ -162,6 +169,28 @@ TEST(LidarHumanTrackerSource, TrackPersistsAcrossConsecutiveScansOfTheSameStatio
   ASSERT_EQ(humans1.size(), 1u);
   ASSERT_EQ(humans2.size(), 1u);
   EXPECT_EQ(humans1[0].id, humans2[0].id);
+}
+
+// The actual regression test for docs/lidar_perception-findings.md S6's live-observed finding,
+// exercised through the full real pipeline (clustering + width filter + TF transform + tracker
+// + gate) rather than only at the LidarTracker unit level - this is what a real depot pillar,
+// sized inside the human-width band, does to a real robot: presents as the same compact,
+// human-width cluster at the same map-frame position, scan after scan, forever.
+TEST(LidarHumanTrackerSource, StationaryClusterAcrossManyScansIsNeverReportedAsAHuman)
+{
+  auto buffer = makeBufferWithStaticTranslation(0.0, 0.0);
+  LidarPerceptionParams params;  // default min_displacement_m=0.15 - the real, deployed value.
+  LidarHumanTrackerSource source(params, buffer);
+
+  auto cluster = makeHumanWidthCluster(0.3, -0.15);
+  std::vector<crowd_nav_perception::HumanObservation> humans;
+  for (int i = 0; i < 20; ++i) {
+    source.processScan(
+      cluster.ranges, cluster.angle_min, cluster.angle_increment, 0.1, 10.0, "lidar_link",
+      t(1.0 + i * 0.1));
+    humans = source.getHumans(t(1.0 + i * 0.1));
+  }
+  EXPECT_TRUE(humans.empty());
 }
 
 TEST(LidarHumanTrackerSource, NumDegradedLastCallReflectsTracksLostNotSyntheticDropout)

@@ -263,6 +263,26 @@ project already has one, for localization) or by requiring a minimum displacemen
 tracked updates before a detection counts toward `CROWD_SIZE`/feeds the policy - is the direct,
 now-motivated next step, not a hypothetical nice-to-have.
 
+### Addendum: fixed - minimum-displacement gate
+
+Fixed in a later pass, prompted by a live user report of the exact symptom this finding
+predicted: the robot refusing to move with no real pedestrian anywhere near it, `CROWD_SIZE`
+firing regardless. `LidarTracker` now withholds any track from `getHumans()` (and therefore from
+`CROWD_SIZE`/`PROXIMITY`/the policy itself) until it has moved at least
+`min_displacement_m` (new `LidarPerceptionParams` field, default 0.15 m, exposed as
+`FollowPath.lidar_min_displacement_m`) from its own fixed origin - the second of the two options
+above, not the map-differencing one, chosen for lower implementation risk (no new map/topic
+dependency) given this was a live-blocking fix, not a scheduled phase. Checked against the
+track's own origin rather than a sliding window, so a real person who's already proven they're
+not a pillar stays counted even if they later stand still. A genuinely static pillar's track
+origin never moves and is withheld forever; this project's own simulated pedestrians (up to
+1.0 m/s, continuously goal-seeking) clear the threshold within a fraction of a second.
+`LidarHumanTrackerSource.StationaryClusterAcrossManyScansIsNeverReportedAsAHuman` is the
+regression test, exercised through the real clustering + TF + tracker pipeline, not just
+`LidarTracker` in isolation. Map-differencing remains the more principled, sensor-agnostic
+option (see §5) and is still open follow-on work if this default proves too permissive in
+practice.
+
 ## Files
 
 - `crowd_nav_ws/src/crowd_nav_perception/`: `lidar_clustering.hpp/.cpp`,

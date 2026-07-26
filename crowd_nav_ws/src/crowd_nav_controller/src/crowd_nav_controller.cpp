@@ -131,6 +131,11 @@ void CrowdNavController::configure(
     node, plugin_name_ + ".lidar_max_track_misses", rclcpp::ParameterValue(5));
   nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".lidar_velocity_smoothing", rclcpp::ParameterValue(0.5));
+  // A track must move this far from its own origin before it's reported at all - the fix for
+  // the live-observed static-pillar-misclassification finding (docs/lidar_perception-
+  // findings.md S6): a pillar's track never clears this, a real moving person's does quickly.
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".lidar_min_displacement_m", rclcpp::ParameterValue(0.15));
   // Empty default (not PARAMETER_STRING/required): nav2_params.yaml is loaded as a raw YAML
   // params file with no launch-substitution preprocessing (confirmed against how this
   // project's own launch files pass it to Node(parameters=[...]) - "$(find-pkg-share ...)"
@@ -216,6 +221,8 @@ void CrowdNavController::configure(
     node->get_parameter(plugin_name_ + ".lidar_max_track_misses").as_int();
   lidar_params.velocity_smoothing =
     node->get_parameter(plugin_name_ + ".lidar_velocity_smoothing").as_double();
+  lidar_params.min_displacement_m =
+    node->get_parameter(plugin_name_ + ".lidar_min_displacement_m").as_double();
   watchdog_window_s_ = node->get_parameter(plugin_name_ + ".watchdog_window_s").as_double();
   debug_inject_decision_delay_s_ =
     node->get_parameter(plugin_name_ + ".debug_inject_decision_delay_s").as_double();

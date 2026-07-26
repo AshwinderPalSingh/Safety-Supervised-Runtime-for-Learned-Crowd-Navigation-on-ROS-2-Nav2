@@ -155,10 +155,11 @@ A second, real implementation now exists and is the default:
 **`LidarHumanTrackerSource`** clusters the robot's own `/scan` returns (adaptive-breakpoint
 clustering with full-circle wraparound handling), tracks clusters frame-to-frame with
 exponential velocity smoothing, and converts to the map frame via TF — no ground truth involved.
-Auditing it found and fixed two real bugs (a TF-timeout segfault; an angular-wraparound gap in
-the clustering that split a person straddling the scan's 0°/360° seam into two humans) and
-surfaced one still-open, honestly-reported finding: the depot's static pillars can fall inside
-the geometric human-width filter and get misclassified as a person. Full writeup:
+Auditing it found and fixed three real bugs (a TF-timeout segfault; an angular-wraparound gap in
+the clustering that split a person straddling the scan's 0°/360° seam into two humans; the
+depot's static pillars falling inside the geometric human-width filter and getting misclassified
+as people, fixed with a minimum-displacement gate — a track has to actually move before it counts
+toward `CROWD_SIZE`/`PROXIMITY` or reaches the policy). Full writeup:
 **`docs/lidar_perception-findings.md`**.
 
 Switch between them with one launch argument — `human_source_type:=ground_truth` or
@@ -288,9 +289,12 @@ Ranked by how directly each follows from a finding already in this report — no
 
 1. **Re-run the 142-episode matrix against `LidarHumanTrackerSource`** — the single most direct
    next measurement; every current result is ground-truth-only.
-2. **Distinguish static from dynamic LiDAR detections** — directly motivated by the live-observed
-   pillar-misclassification finding; map-differencing against the already-loaded static map is
-   the more principled of two concrete options.
+2. **Map-differencing against the already-loaded static map, as a second layer on top of the
+   minimum-displacement gate already shipped** — the gate closes the live-observed
+   pillar-misclassification finding for the common case (pillars don't move; simulated
+   pedestrians do, quickly), but map-differencing is the more principled, sensor-agnostic check
+   and would also catch any other permanently-static, human-width object the gate's threshold
+   doesn't happen to suit.
 3. **A real-hardware LiDAR calibration pass** — every clustering/tracking parameter is currently
    sized against the simulated sensor, not real noise characteristics.
 4. **HEIGHT integration** — a second, genuinely RL-trained, graph-structured policy family;

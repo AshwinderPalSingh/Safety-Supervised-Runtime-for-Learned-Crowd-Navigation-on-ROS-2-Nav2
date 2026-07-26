@@ -35,14 +35,26 @@ class LidarTracker
 {
 public:
   explicit LidarTracker(
-    double gate_distance_m = 0.6, int max_misses = 5, double velocity_smoothing = 0.5);
+    double gate_distance_m = 0.6, int max_misses = 5, double velocity_smoothing = 0.5,
+    double min_displacement_m = 0.15);
 
   // Associates detections against existing tracks, updates position/velocity for matched
   // tracks, creates new tracks for unmatched detections, and ages out (reporting via
   // numLostLastCall()) tracks that missed too many updates in a row. Returns one
-  // HumanObservation per currently-alive track (including ones that missed this update but
-  // haven't hit max_misses yet, holding their last known position/velocity - the standard
-  // "coast through a brief occlusion" behavior), not one per raw detection.
+  // HumanObservation per currently-alive track that has moved at least min_displacement_m from
+  // its own origin (including ones that missed this update but haven't hit max_misses yet,
+  // holding their last known position/velocity - the standard "coast through a brief occlusion"
+  // behavior), not one per raw detection.
+  //
+  // The displacement gate exists because this project's own purely-geometric width filter
+  // (LidarPerceptionParams::min/max_cluster_width_m) cannot distinguish a static structural
+  // pillar sized inside the human-width band from an actual person from a single scan alone -
+  // found live during this project's own Gazebo verification (docs/lidar_perception-findings.md
+  // S6), not hypothetical. A pillar's track origin never moves; a real, socially-simulated
+  // pedestrian's does, quickly, since it's continuously goal-seeking. Checked against the
+  // track's own fixed origin (not a sliding window) so a person who legitimately proved they're
+  // not a pillar once stays counted even if they later stand still - only a track that has
+  // NEVER moved gets held back.
   std::vector<HumanObservation> update(
     const std::vector<Detection> & detections, const rclcpp::Time & stamp);
 
@@ -61,6 +73,11 @@ private:
     double y = 0.0;
     double vx = 0.0;
     double vy = 0.0;
+    // Set once, at track creation, from that first detection - never updated again. The
+    // displacement gate below compares current (x, y) against this fixed point, not a sliding
+    // window, so a track only ever needs to clear it once.
+    double origin_x = 0.0;
+    double origin_y = 0.0;
     int misses_in_a_row = 0;
     rclcpp::Time last_update_stamp;
     bool matched_this_call = false;
@@ -69,6 +86,7 @@ private:
   double gate_distance_m_;
   int max_misses_;
   double velocity_smoothing_;
+  double min_displacement_m_;
   uint32_t next_id_ = 1;
   uint32_t lost_last_call_ = 0;
   std::vector<Track> tracks_;

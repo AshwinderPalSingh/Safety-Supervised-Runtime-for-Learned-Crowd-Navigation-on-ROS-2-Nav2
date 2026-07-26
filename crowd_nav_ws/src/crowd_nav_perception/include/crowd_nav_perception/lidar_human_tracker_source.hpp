@@ -29,6 +29,12 @@ struct LidarPerceptionParams
   double gate_distance_m = 0.6;
   int max_track_misses = 5;
   double velocity_smoothing = 0.5;
+  // A track must move at least this far from its own origin before it's reported at all -
+  // the fix for a live-observed finding (docs/lidar_perception-findings.md S6): the width band
+  // above alone can't tell a static pillar sized inside it from a real person. Pillars never
+  // clear this; this project's own simulated pedestrians (continuously goal-seeking, up to
+  // 1.0 m/s) clear it within a fraction of a second.
+  double min_displacement_m = 0.15;
   std::string map_frame = "map";
 };
 
@@ -64,7 +70,9 @@ public:
     const LidarPerceptionParams & params)
   : params_(params),
     tf_buffer_(std::move(tf_buffer)),
-    tracker_(params.gate_distance_m, params.max_track_misses, params.velocity_smoothing),
+    tracker_(
+      params.gate_distance_m, params.max_track_misses, params.velocity_smoothing,
+      params.min_displacement_m),
     logger_(node->get_logger())
   {
     scan_sub_ = node->template create_subscription<sensor_msgs::msg::LaserScan>(

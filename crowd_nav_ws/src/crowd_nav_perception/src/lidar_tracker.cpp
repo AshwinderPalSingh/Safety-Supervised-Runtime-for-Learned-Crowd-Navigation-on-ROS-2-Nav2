@@ -7,10 +7,12 @@
 namespace crowd_nav_perception
 {
 
-LidarTracker::LidarTracker(double gate_distance_m, int max_misses, double velocity_smoothing)
+LidarTracker::LidarTracker(
+  double gate_distance_m, int max_misses, double velocity_smoothing, double min_displacement_m)
 : gate_distance_m_(gate_distance_m),
   max_misses_(max_misses),
-  velocity_smoothing_(velocity_smoothing)
+  velocity_smoothing_(velocity_smoothing),
+  min_displacement_m_(min_displacement_m)
 {
 }
 
@@ -78,6 +80,8 @@ std::vector<HumanObservation> LidarTracker::update(
     t.id = next_id_++;
     t.x = detections[di].x;
     t.y = detections[di].y;
+    t.origin_x = detections[di].x;
+    t.origin_y = detections[di].y;
     t.last_update_stamp = stamp;
     t.matched_this_call = true;
     tracks_.push_back(t);
@@ -102,6 +106,10 @@ std::vector<HumanObservation> LidarTracker::update(
   std::vector<HumanObservation> out;
   out.reserve(tracks_.size());
   for (const auto & t : tracks_) {
+    // Never-moved tracks are withheld entirely - not reported with reduced confidence, not
+    // counted toward CROWD_SIZE, not fed to the policy at all - since a track that hasn't
+    // proven it moves is, on the evidence available, indistinguishable from a static pillar.
+    if (std::hypot(t.x - t.origin_x, t.y - t.origin_y) < min_displacement_m_) {continue;}
     HumanObservation obs;
     obs.id = t.id;
     obs.x = t.x;

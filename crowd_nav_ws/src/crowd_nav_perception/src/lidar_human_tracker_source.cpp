@@ -13,7 +13,9 @@ LidarHumanTrackerSource::LidarHumanTrackerSource(
   const LidarPerceptionParams & params, std::shared_ptr<tf2_ros::Buffer> tf_buffer)
 : params_(params),
   tf_buffer_(std::move(tf_buffer)),
-  tracker_(params.gate_distance_m, params.max_track_misses, params.velocity_smoothing),
+  tracker_(
+    params.gate_distance_m, params.max_track_misses, params.velocity_smoothing,
+    params.min_displacement_m),
   logger_(rclcpp::get_logger("lidar_human_tracker_source"))
 {
 }
