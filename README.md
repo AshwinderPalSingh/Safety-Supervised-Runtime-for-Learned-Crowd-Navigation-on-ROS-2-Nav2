@@ -1,244 +1,330 @@
+<div align="center">
+
 # Safety-Supervised Runtime for Learned Crowd Navigation on ROS 2 Nav2
 
-A deployment runtime that lets a learned crowd-navigation RL policy (SARL) drive a Nav2 robot
-in simulation, wrapped in a hard, verifiable safety layer: a forward-simulated collision/keep-out
-check and a 5-criteria out-of-distribution detector, with graceful fallback to a classical MPPI
-controller. The contribution is the software layer around the policy, not the policy itself —
-and the 139-episode evaluation matrix this project ran against it (Phase 10,
-`docs/phase10-findings.md`) is written up below because it's the most interesting part of the
-project, not because the method wins outright. It doesn't, on every metric. That's the point.
+**A hard safety layer around a learned crowd-navigation policy — forward-simulated
+collision checking, 5-criteria out-of-distribution detection, and graceful fallback to a
+classical controller — evaluated with a 142-episode matrix and reported honestly, wins and
+losses both.**
 
-## Results: what the safety supervisor actually does, and where its limits are
+[![ROS 2](https://img.shields.io/badge/ROS%202-Humble-22314E?logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
+[![Nav2](https://img.shields.io/badge/Nav2-nav2__core%3A%3AController-1E88E5)](https://docs.nav2.org/)
+[![Gazebo](https://img.shields.io/badge/Gazebo-Ignition%20Fortress-F5A623?logo=gazebo&logoColor=white)](https://gazebosim.org/)
+[![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-1.20.1-005CED?logo=onnx&logoColor=white)](https://onnxruntime.ai/)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/17)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**These results were corrected after a hard adversarial audit found a critical bug** (a
-coordinate-frame mismatch that silently fed the policy — not just the supervisor — human
-positions offset by several meters from their real location, for the entire time this project
-ran any live Gazebo episode; `docs/audit.md` §1.3). The full 142-episode matrix was re-run
-against the fix, and the collision-rate result below is the corrected one — it is **not** the
-result an earlier version of this project reported, and that reversal is stated plainly, not
-smoothed over: see `docs/phase10-findings.md`'s "CORRECTION" section for the full before/after
-comparison and mechanism.
+[Overview](#overview) ·
+[Results](#results-what-the-safety-supervisor-actually-does) ·
+[Architecture](#architecture) ·
+[Demo](#demo--screenshots) ·
+[Getting Started](#getting-started) ·
+[Docs](#documentation-map)
 
-Three results, run together, describe one underlying pattern rather than three separate ones:
-**the safety supervisor takes a raw learned policy that is measurably less safe than a
-classical baseline under real conditions, and restores it to match the classical baseline —
-while remaining perfect against a static hazard and honest about where its own margin runs out.**
+</div>
 
-- **Against a static, exactly-known hazard, the mechanism is perfect.** A permanent
-  keep-out-zone scenario (`depot_keepout_block`) shows the three configs behaving exactly as
-  hypothesized: the stock MPPI baseline routes a 6.4 m detour around the zone via Nav2's own
-  costmap planner; the unsupervised policy (`policy_raw`) drives straight into it after half a
-  meter, exactly as expected from a policy with no concept of a static keep-out region; and the
-  supervised policy's forward-sim check correctly rejects the identical unsafe approach **439
-  times out of 439** — zero violations — but has no way to route around the obstruction the way
-  the planner does, so it gets stuck and times out rather than either violating or succeeding.
-  That's the cleanest possible demonstration of what a bounded safety check actually buys you:
-  a deterministic, correct refusal, with no fallback smarter than refusal itself.
-- **Against fast, dynamic hazards, the supervisor closes a real safety gap the raw policy has.**
-  Under the fairest comparison in the matrix (reactive pedestrians, who actively avoid the
-  robot), the *raw*, unsupervised policy has a **higher** collision rate than the classical MPPI
-  baseline (50% vs 12%, in both scenario families) — an honest, unflattering measurement of an
-  imitation-learning-only checkpoint driven through an untuned holonomic-to-diff-drive
-  conversion. The supervised policy closes essentially all of that gap: 12% collision rate in
-  both families, matching the classical baseline exactly. Two of sixteen reactive-mode
-  supervised episodes still collide; both are caught by the supervisor within a quarter of a
-  second of contact — a narrow, last-instant margin limit, not a broad detection gap. The
-  residual points at the same underlying cause as the FOV/radius mismatches found in Phases
-  8–9: the OOD proximity threshold and the forward-sim's lookahead window are both values
-  inherited from the reference policy's own training configuration, never re-tuned against this
-  robot's actual depot dynamics.
-- **Under degraded perception, the effect saturates rather than compensating.** A 5-point
-  perception-dropout sweep found a sharp, reproducible cliff between `dropout_prob` 0.0 and 0.1
-  (intervention rate roughly triples), then goes essentially flat through 0.5, even though the
-  underlying probability of losing track of a human keeps climbing steeply across that range.
-  If the supervisor were compensating harder for worse perception, that rate should climb with
-  it. It doesn't: the policy is already as confused as it gets past roughly 0.1, and the
-  supervisor doesn't get better at catching a policy that's already lost — it just keeps
-  rejecting the same confused output.
+---
 
-Full evidence chain, including the two significant harness bugs found and fixed mid-phase (a
-Gazebo plugin that had silently killed ground-truth pose since Phase 4; a coordinate-frame bug
-that made the keep-out scenario's first run look like a supervisor defect when the supervisor
-was never the problem) and the later hard-audit correction above: **`docs/phase10-findings.md`**
-(evaluation detail) and **`docs/audit.md`** (the audit that found the frame bug and the
-OOD-reachability gap). A complete, interview-grade account of the whole project, including this
-correction, is in **`explanation.pdf`**.
+## Overview
+
+A learned crowd-navigation policy (SARL) is fast to imitate human-like avoidance behavior and
+easy to break outside the geometry it trained on. This project doesn't try to make the policy
+safer — it wraps an unmodified policy in a **runtime supervisor** that checks every candidate
+action before it reaches the robot, and hands off to a classical MPPI controller the instant
+the policy's own behavior or its inputs look untrustworthy. It runs as a single
+[`nav2_core::Controller`](https://docs.nav2.org/plugin_tutorials/docs/writing_new_nav2controller_plugin.html)
+plugin, alongside the stock Nav2 stack, on a diff-drive robot in Gazebo.
+
+The interesting part isn't "the policy works" — it's the **139-episode evaluation matrix**
+(`docs/phase10-findings.md`) this project ran against its own claims, including a hard
+adversarial audit (`docs/audit.md`) that found a critical coordinate-frame bug, reversed the
+headline collision-rate result, and is reported here without smoothing it over. The supervisor
+is perfect against a static hazard, closes a real safety gap against dynamic ones, and saturates
+rather than compensates once its own perception degrades — three honest findings, not one clean
+win.
+
+**Read `explanation.pdf`** for the full interview-grade technical narrative (53 pages: every
+design decision, every bug found and how it was actually verified, a 34-question Q&A appendix).
+This README is the map; that document is the territory.
+
+## Architecture
+
+<p align="center">
+  <img src="docs/images/architecture-dataflow.png" alt="Data flow: Gazebo perception through
+  policy decision to actuation, with the safety supervisor and MPPI fallback in the loop"
+  width="850">
+</p>
+
+One control tick, end to end: `CrowdNavController::computeVelocityCommands()` builds a
+`WorldState` from the current Nav2-supplied pose and live human perception, runs the configured
+`PolicyAdapter` inside a 30&nbsp;ms watchdog on a background thread, and — only if that returns
+in time — runs `SafetySupervisor`'s cheap out-of-distribution checks first, then a 4-step,
+1.0&nbsp;s forward-simulated collision/keepout check against the live costmap. A pass returns the
+policy's candidate; a supervisor rejection returns a direct stop and logs an `InterventionEvent`;
+a watchdog timeout defers to an embedded `nav2_core::Controller` fallback (stock MPPI, loaded via
+`pluginlib`) running only on the main thread. Everything shares one costmap pointer and one
+control tick — the supervisor structurally sees what the rest of the stack sees, not a
+synchronized copy of it.
+
+The policy, the supervisor, and the fallback controller are three genuinely separate pieces of
+logic sharing one plugin instance — deliberately, so a rejection can never race a fallback call
+into the same controller object (`docs/lessons.md`, §7.4 of `explanation.pdf`).
+
+## Results: what the safety supervisor actually does
+
+> These results were corrected after a hard adversarial audit found a critical coordinate-frame
+> bug that silently fed the policy — not just the supervisor — human positions offset by several
+> meters from their real location, for the entire time this project ran a live Gazebo episode
+> (`docs/audit.md` §1.3). The full 142-episode matrix was re-run against the fix; the numbers
+> below are the corrected result, and the reversal is documented, not hidden — see
+> `docs/phase10-findings.md`'s **CORRECTION** section for the full before/after.
+
+Three results, run together, describe one pattern: **the supervisor takes a raw learned policy
+that is measurably less safe than a classical baseline under real conditions, and restores it to
+match the baseline — while remaining perfect against a static hazard and honest about where its
+own margin runs out.**
+
+<p align="center">
+  <img src="docs/images/eval-outcome-rates.png" alt="Episode outcome rate (collision / success /
+  timeout) by scenario family and controller configuration" width="620">
+</p>
+
+| Scenario | What it shows |
+|---|---|
+| **Static keepout zone** (`depot_keepout_block`) | The supervisor's forward-sim check rejects the identical unsafe approach **439/439 times — zero violations.** The raw policy drives straight into the zone; the MPPI baseline routes a 6.4 m detour via Nav2's own planner (the supervisor has no planner, so it gets stuck rather than reroute — the honest limit of "refusal" as a strategy). |
+| **Reactive pedestrians** (fairest comparison) | Raw policy collision rate is **50%**, worse than the classical MPPI baseline's **12%** — an honest, unflattering measurement. The supervised policy closes the gap to **12%**, matching baseline. Two residual collisions are each caught within a quarter second of contact — a margin limit, not a detection gap. |
+| **Perception noise sweep** (`dropout_prob` 0.0→0.5) | A sharp, reproducible cliff between 0.0 and 0.1, then flat through 0.5 — even as the true probability of losing a human keeps climbing. The supervisor doesn't get better at catching an already-confused policy; it saturates. |
+
+<p align="center">
+  <img src="docs/images/eval-noise-sweep.png" alt="Perception noise sweep: intervention rate
+  climbs and success rate collapses between dropout_prob 0.0 and 0.2, then both go flat" width="620">
+</p>
+
+Full evidence chain, including two harness bugs found and fixed mid-phase and the hard-audit
+correction above: **`docs/phase10-findings.md`** (evaluation detail), **`docs/audit.md`** (the
+audit itself), **`explanation.pdf`** (complete narrative).
+
+## Demo & Screenshots
+
+The plots above are real, regenerated data. The GUI captures below are not included in this
+repository yet — see [`docs/images/README.md`](docs/images/README.md) for the exact,
+ready-to-drop-in list (filenames, what each should show, and the exact commands to reproduce the
+scenario). Once a file lands at the path shown, uncomment its block below — no further edits
+needed, the syntax is already correct.
+
+<!--
+<p align="center">
+  <img src="docs/images/demo-crowd-navigation.gif" alt="Robot navigating through a crowd of
+  reactive pedestrians in the depot world, supervised policy active" width="720">
+  <br><em>Full run: supervised policy navigating a crowd of reactive pedestrians.</em>
+</p>
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/demo-gazebo.png" alt="Gazebo depot world with robot and pedestrians"></td>
+<td width="50%"><img src="docs/images/demo-rviz.png" alt="RViz view: costmap, human markers, planned path"></td>
+</tr>
+<tr>
+<td align="center"><em>Gazebo: depot world, robot among pedestrians</em></td>
+<td align="center"><em>RViz: costmap, live human tracks, planned path</em></td>
+</tr>
+</table>
+
+<p align="center">
+  <img src="docs/images/demo-intervention.gif" alt="A PROXIMITY intervention firing: console log
+  and RViz side by side as the supervisor rejects an unsafe candidate and stops" width="720">
+  <br><em>A real intervention: the supervisor rejects a candidate action and stops.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/demo-keepout.gif" alt="The keepout-zone demo: raw policy drives in,
+  supervised policy is rejected at the boundary every time" width="720">
+  <br><em>Keepout zone: the supervisor's forward-sim check rejecting the identical unsafe
+  approach, over and over, at the zone boundary.</em>
+</p>
+-->
+
+## Perception: two selectable human-state sources
+
+<p align="center">
+  <img src="docs/images/architecture-policyadapter-seam.png" alt="PolicyAdapter interface with
+  SarlAdapter and DummyAdapter as real implementations, HeightAdapter as a future extension"
+  width="620">
+</p>
+
+Every result above was measured against `GroundTruthHumanSource` — a deliberate isolation tool
+(it separates a policy-logic bug from a perception bug), not a claim about real-robot
+performance, and `docs/phase10-findings.md`/`explanation.pdf` §11.3 say so without softening it.
+A second, real implementation now exists and is the default:
+**`LidarHumanTrackerSource`** clusters the robot's own `/scan` returns (adaptive-breakpoint
+clustering with full-circle wraparound handling), tracks clusters frame-to-frame with
+exponential velocity smoothing, and converts to the map frame via TF — no ground truth involved.
+Auditing it found and fixed two real bugs (a TF-timeout segfault; an angular-wraparound gap in
+the clustering that split a person straddling the scan's 0°/360° seam into two humans) and
+surfaced one still-open, honestly-reported finding: the depot's static pillars can fall inside
+the geometric human-width filter and get misclassified as a person. Full writeup:
+**`docs/lidar_perception-findings.md`**.
+
+Switch between them with one launch argument — `human_source_type:=ground_truth` or
+`lidar_tracked` (default) — see [Getting Started](#getting-started). The 142-episode matrix
+above is explicitly pinned to `ground_truth` so the historical results stay reproducible;
+rerunning it against `lidar_tracked` is the single most valuable next measurement
+(`docs/lidar_perception-findings.md`, `explanation.pdf` §12.1) and has not been done yet.
 
 ## `PolicyAdapter`: one real implementation, a deliberately defended seam
 
 `PolicyAdapter` (`crowd_nav_policy_adapters/include/crowd_nav_policy_adapters/policy_adapter.hpp`)
-has exactly one production implementation, `SarlAdapter`, plus `DummyAdapter` (a
-zero-checkpoint smoke test for the inference path, not a second policy family). That's a
-deliberate choice, not an unfinished one: building a second real adapter (HEIGHT, see Future
-Work) means first validating an officially-unverified checkpoint — its own, separate
-investigation, the same class of risk that turned out badly for a different checkpoint in
-Phase 0 (§ below) — and folding that open-ended risk into this phase would have traded a clean,
-finished result for an unbounded one. The interface is designed to be extended without the
-rest of the runtime changing; the concrete extension path below states exactly what that would
-require, so the seam is checkable without a second implementation existing yet.
+is a 4-method interface — `expectedShape()`, `buildInputs(WorldState)`, `selectAction(...)`,
+`name()` — with one production implementation, `SarlAdapter`, plus `DummyAdapter` (a
+zero-checkpoint smoke test for the inference path, not a second policy family). SARL is a
+**value network**, not a direct policy net: `buildInputs()` enumerates a discretized candidate
+action space, one-step-propagates the world state under each candidate, and batches SARL's flat
+observation vector per candidate; `selectAction()` runs argmax over the batch's value-network
+output plus an immediate-reward term. None of that candidate-search machinery lives in the
+interface — it's private to `SarlAdapter`.
 
-**The interface** is four methods: `expectedShape()` (declared ONNX input/output tensor
-names/shapes), `buildInputs(WorldState)` (canonical world state → whatever tensor batch this
-policy family's network needs), `selectAction(TensorBundle, WorldState)` (network output →
-a holonomic `Velocity2D`), `name()`. `WorldState` (`crowd_nav_observation/world_state.hpp`) is
-a plain struct — a robot self-state plus a flat list of `HumanObservation`s — with no assumed
-tensor layout or graph structure baked in; it's the common currency every adapter consumes,
-regardless of what internal representation it builds from that.
+A second real adapter (HEIGHT — a graph-structured, PPO-trained policy family) is deliberately
+scoped as separate follow-on work, not folded in here: its only available checkpoint is
+author-provided but unverified, and this project already has a precedent for why that deserves
+real skepticism (a different RL-trained SARL checkpoint failed validation outright at 0.21
+success against a paper-reported 0.99). See [Future Work](#future-work).
 
-**What `SarlAdapter` does with it**, concretely, so the contrast with HEIGHT is specific rather
-than abstract: SARL is a *value network*, not a direct policy net (see `docs/phase0-findings.md`
-for why that distinction mattered for the ONNX export). `buildInputs()` enumerates a discretized
-candidate action space, one-step-propagates the world state under each candidate, and builds
-SARL's flat 9-self-field + 5-per-human-field vector (`ObservationBuilder`) for every propagated
-candidate, batched as rows — shape `(candidates, humans, 13)`. `selectAction()` runs argmax over
-the batch's value-network outputs plus an immediate-reward term to pick the best candidate.
-None of that candidate-enumeration/one-step-lookahead/argmax machinery is part of the
-`PolicyAdapter` interface itself — it's `SarlAdapter`'s own internal strategy, private to that
-implementation.
+## Repository Structure
 
-**What a `HeightAdapter` would need to implement**, concretely (per `docs/phase0-findings.md`'s
-own research into HEIGHT's architecture):
-- `buildInputs()` would construct a **heterogeneous spatio-temporal graph**, not a flat vector -
-  node features split by type (robot, human), edges encoding spatial relationships, and a
-  temporal stack of recent frames rather than a single-timestep snapshot. This is genuinely
-  harder than `SarlAdapter`'s version: a graph-structured `TensorBundle` (multiple named
-  tensors - node features, edge indices, temporal buffers) instead of one flat batch, and
-  `WorldState` doesn't need to change to support it, since it was never SARL-shaped to begin
-  with - it's already just a robot state and a flat human list, which is exactly what a graph
-  builder would consume as its node source.
-- `selectAction()` would actually be **simpler** than SARL's: HEIGHT outputs an action directly
-  via PPO, with no candidate enumeration, one-step propagation, or argmax search needed at all -
-  it's a direct read of the network's own output.
-- `expectedShape()` and `name()` are adapter-local bookkeeping either way, no new design needed.
-
-**What would not change**, and is exactly what makes the seam a real reusability proof rather
-than an assertion: `crowd_nav_controller`'s decision-core (watchdog, rate handling, MPPI
-fallback), `crowd_nav_safety_supervisor` (operates on the adapter's output `Velocity2D` and the
-canonical `WorldState`, never on adapter internals), the evaluation harness
-(`crowd_nav_evaluation`), and `WorldState`/`HumanObservation` themselves. The only integration
-point in `crowd_nav_controller.cpp` is a one-line addition to a plain string switch already
-built for exactly this (`adapter_type == "sarl"` / `"dummy"` today; `"height"` would be a third
-branch constructing `HeightAdapter` the same way) - not a refactor, a config-driven case
-addition. If a real `HeightAdapter` build ever required touching any of those four unchanged
-things, that itself would be the important finding (the abstraction wasn't as clean as
-designed) - which is exactly the kind of result this project has consistently chosen to report
-rather than hide throughout every phase above.
-
-## Future work
-
-**HEIGHT integration (a genuinely RL-trained second policy family) is explicitly scoped as
-follow-on work, not part of this project's current scope, and treated as its own
-investigation rather than folded in here.** Two reasons, stated plainly rather than left
-implicit:
-- It starts by validating `Shuijing725/CrowdNav_HEIGHT`'s official checkpoint (a Google Drive
-  link, currently **unverified** - `IMPLEMENTATION_PLAN.md` §1.8), with the same skepticism
-  the RL-trained SARL checkpoint deserved before differential testing found it only achieved a
-  0.21 success rate against the paper's reported 0.99 (`docs/phase0-findings.md`). If this
-  checkpoint turns out the same way, validating it is its own multi-day investigation before
-  any adapter code gets written - a real, open-ended risk, not a formality.
-- `HeightAdapter` itself (see above) is real new work against a fundamentally different
-  observation shape - not a config swap, and not reusable from `SarlAdapter`'s
-  candidate-action-search pattern.
-
-Decided explicitly rather than left to drift: this project closes at Phase 11 with a complete,
-honestly-evidenced result on its own terms (a real safety-supervised runtime, validated end to
-end, with the tradeoffs above reported in full). `PolicyAdapter` as a one-implementation
-interface with a concretely-stated extension path is a deliberate, defended stopping point, not
-an unfinished one - see the section above for exactly what a second implementation would
-require and exactly what would stay unchanged. If HEIGHT integration happens, it's the start of
-a separately-scoped effort, given the open-ended checkpoint risk above, not a phase folded into
-this one's remaining backlog.
-
-## Known limitations (stated deliberately, not discovered as accidents)
-
-These are real constraints on what this project's results mean, recorded here so they're
-visible up front rather than buried in a findings doc no one reads before citing a number.
-
-- **The simulated LiDAR is 180° field of view, not 360°.** The robot's `gpu_lidar` sensor
-  hit a confirmed rendering bug in this project's gz-sim 6.18.0 (Fortress) install: a
-  ~176°-wide self-detection artifact in the sensor's own rear hemisphere (proven
-  sensor-frame-relative by rotating the sensor and watching the artifact move with it — not
-  robot geometry, not fixable by mount height or sensor type). Masked at the source rather
-  than filtered downstream, which is the right call for avoiding a two-topics-diverge
-  localization bug, but the honest cost is a real ~184°→180° field-of-view reduction. Combined
-  with the project's already-deliberate 8 m range cap (a conservative budget-sensor spec, see
-  `IMPLEMENTATION_PLAN.md` §3), the simulated robot runs a sensor closer to a real cheap 180°
-  LiDAR than the original 360°/8 m spec. Full diagnostic trail: `docs/phase1-findings.md`.
-  Related upstream issue (not an exact match, but the same problem family, still open):
-  [gazebosim/gz-sim#2743](https://github.com/gazebosim/gz-sim/issues/2743).
-- **The SARL policy checkpoint is imitation-learning-only, not RL-refined.** The RL-trained
-  checkpoint from the fork this project sources weights from failed validation (0.21 success
-  rate vs. the paper's reported 0.99); root-caused via differential testing to that specific
-  file, not a reproduction bug. The IL-only checkpoint from the same repo validates cleanly
-  (0.96 success / 0.02 collision). Chosen over an alternative, genuinely RL-trained checkpoint
-  from a different fork (0.72/0.18/0.10) because an 18%-collision-rate base policy undermines
-  this project's core evaluation question — distinguishing "the safety supervisor caught
-  genuinely unsafe behavior" from "the supervisor is compensating for a mediocre policy." Real
-  cost: an IL-only policy won't show RL-refined crowd-interaction timing distinct from the
-  classical ORCA baseline it's evaluated against. Full reasoning: `docs/phase0-findings.md`,
-  `IMPLEMENTATION_PLAN.md` §1.8. A second, genuinely RL-trained policy (HEIGHT) is scoped
-  follow-on work, not part of this project - see Future Work above.
-- **Ground-truth human perception by default**, though the degradation model is now exercised
-  directly: Phase 10's noise sweep (`docs/phase10-findings.md`) swept `dropout_prob` from 0 to
-  0.5 and found a sharp failure cliff between 0.1 and 0.2 (success collapses from 7/8 to 0/8),
-  confirmed to be policy/metric saturation rather than a gradual decline or the supervisor
-  compensating harder for worse perception.
-- **The safety supervisor's OOD detector characterizes world-state novelty, not input-pipeline
-  correctness.** Its five criteria (crowd size, proximity, relative speed, command magnitude,
-  perception confidence) flag a scene unlike the training distribution; none of them can detect
-  that the observation reaching the policy was already wrong before any threshold looked at it
-  (Phase 8's FOV-filter finding, resolved in Phase 9, was exactly that class of bug - see
-  `docs/phase9-findings.md` §"Design notes carried into Phase 10+"). A clean OOD-trigger rate is
-  not, by itself, evidence the input pipeline is correct; that needs differential testing
-  against a reference implementation, which is how the Phase 8 bug was actually found.
-- **The safety supervisor's reliability tracks how well-characterized the hazard is, not just
-  whether it's dangerous** - see Results above for the full three-finding synthesis
-  (`docs/phase10-findings.md`).
-
-## Known upstream API/doc discrepancies (verified against real behavior, not assumed)
-
-Nav2's own documentation isn't always right either — worth a standing reminder to verify
-against the actual running service/behavior, not just the docstring, the same discipline this
-project applies to its own claims.
-
-- **`nav2_msgs/srv/LoadMap`'s `map_url` field doc comment describes a `file:///path/to/map.yaml`
-  form as valid.** On this project's Nav2 Humble build, a `file://`-prefixed URL makes
-  `map_server` return `RESULT_INVALID_MAP_METADATA` for any map, including a trivially valid
-  one used to isolate the cause — confirmed via direct `ros2 service call` testing. A plain
-  absolute path (no scheme prefix) works correctly. Used by `crowd_nav_zones`' zone-manager
-  node (Phase 3, `docs/phase3-findings.md`) to reload the keep-out zone mask at runtime.
-
-## Development setup
-
-This project uses **CycloneDDS**, not the ROS 2 default FastRTPS, after a real reliability
-issue in Phase 2 (`docs/phase2-findings.md`): FastRTPS's shared-memory transport left stale
-`/dev/shm` segments after ungraceful process kills, which degraded into Nav2 lifecycle
-hangs during heavy iterative testing. Before running anything in this workspace:
-
-```bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+```
+crowd_nav_ws/src/
+├── crowd_nav_bringup            Top-level Nav2 bringup: AMCL/SLAM launch, costmap/planner config
+├── crowd_nav_controller         nav2_core::Controller plugin: watchdog, adapter dispatch, MPPI fallback
+├── crowd_nav_safety_supervisor  OOD detector (5 criteria) + forward-sim collision/keepout check
+├── crowd_nav_policy_adapters    PolicyAdapter interface, SarlAdapter, DummyAdapter
+├── crowd_nav_observation        Canonical WorldState / HumanObservation + ObservationBuilder
+├── crowd_nav_perception         HumanStateSource: GroundTruthHumanSource, LidarHumanTrackerSource
+├── crowd_nav_pedestrians        Deterministic seeded social-force pedestrian simulation
+├── crowd_nav_zones              Dynamic keep-out zones (AddZone/RemoveZone → costmap filter mask)
+├── crowd_nav_evaluation         Scenario suite, harness runner, metrics, CSV + plots
+├── crowd_nav_gazebo             World files and robot spawn launch
+├── crowd_nav_description        URDF/xacro digital twin of the target robot
+├── crowd_nav_control            ros2_control config: sim hardware interface today, ESP32 later
+└── crowd_nav_onnxruntime_vendor Vendored ONNX Runtime CPU release as a CMake target
 ```
 
-(already appended to `~/.bashrc` on the dev machine this was built on — new interactive
-shells pick it up automatically; only needed manually in non-interactive/scripted contexts).
-`scripts/check_dds_health.sh` and `scripts/ros2_teardown.sh` provide an automated dirty-state
-check and safe cleanup regardless of which RMW is active - see Phase 2 findings for both.
+## Getting Started
 
-CI (`.github/workflows/`): a per-PR gate builds the workspace, compiles every plugin, and runs
-the full unit-test suite (no Gazebo - see `IMPLEMENTATION_PLAN.md` §6 for why sim-in-CI stays a
-separate, non-blocking tier). A nightly/manually-triggered workflow launches the full stack
-(Gazebo + Nav2 + one pedestrian), drives one goal to completion, and - per a requirement pinned
-after Phase 10's own experience - asserts that the specific topics the stack depends on are
-actually live (starting with `/ground_truth/robot_pose`, the exact topic that silently stopped
-publishing for three phases before anything noticed). It's a smoke test for launch-file and
-parameter-schema rot and exactly this class of silent-topic-death, not a behavioral correctness
-gate, and it doesn't block PRs.
+**Requirements:** Ubuntu 22.04, ROS 2 Humble, Gazebo (Ignition Fortress / `gz-sim` 6.18), CycloneDDS.
 
-## Build history
+```bash
+# CycloneDDS, not the ROS 2 default FastRTPS — a real reliability fix, see Known Limitations.
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-12 phases planned, 11 complete - the project closes here (Phase 12, HEIGHT integration, is
-scoped follow-on work, see Future Work above, decided deliberately rather than left ambiguous).
-Each phase's detailed findings, including every bug found and how it was actually verified
-rather than assumed fixed, are logged as it landed: `docs/phase0-findings.md` through
-`docs/phase11-findings.md`. `IMPLEMENTATION_PLAN.md` §3 has the full phase-by-phase plan and
-final status; this file summarizes the result, not the other way around.
+# Build
+cd crowd_nav_ws
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+source install/setup.bash
+```
+
+**Run the full stack** (Gazebo + Nav2 + the supervised policy, in three terminals — `amcl.launch.py`
+doesn't launch RViz itself, so it's a separate step):
+
+```bash
+# Terminal 1 — robot, Nav2, safety-supervised SARL controller (defaults: depot world, LiDAR-tracked perception)
+ros2 launch crowd_nav_bringup amcl.launch.py
+
+# Terminal 2 — a deterministic, seeded crowd of reactive pedestrians
+ros2 launch crowd_nav_pedestrians pedestrians.launch.py
+
+# Terminal 3 — RViz, pointed at Nav2's own stock config (this project uses unmodified
+# Nav2 node/topic names, so it works with no project-specific RViz config needed)
+rviz2 -d /opt/ros/humble/share/nav2_bringup/rviz/nav2_default_view.rviz
+```
+
+Wait for Terminal 1 to print `Managed nodes are active`, then send a goal from RViz's "2D Goal
+Pose" toolbar button, or via CLI (`ros2 topic pub -1 /goal_pose geometry_msgs/msg/PoseStamped
+"{header: {frame_id: 'map'}, pose: {position: {x: 2.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}}"`).
+Useful launch arguments on `amcl.launch.py`: `adapter_type:=sarl|dummy`,
+`supervisor_enabled:=true|false`, `human_source_type:=lidar_tracked|ground_truth`,
+`perception_dropout_prob:=<0.0-1.0>`.
+
+**Run the evaluation matrix** (142 seeded episodes, ~reproduces `docs/phase10-findings.md`):
+
+```bash
+cd crowd_nav_ws/src/crowd_nav_evaluation/scripts
+python3 run_matrix.py
+```
+
+**Run tests + lint:**
+
+```bash
+colcon test --packages-select crowd_nav_controller crowd_nav_safety_supervisor \
+  crowd_nav_policy_adapters crowd_nav_perception crowd_nav_observation crowd_nav_zones
+colcon test-result --verbose
+```
+
+## Known Limitations
+
+Stated deliberately, not discovered as accidents — full detail in `explanation.pdf` §11.
+
+- **The simulated LiDAR is 180° FOV, not 360°.** A confirmed gz-sim 6.18.0 rendering bug causes
+  spurious self-hits across half the scan; masked at the source, at the honest cost of a real
+  FOV reduction. The clustering algorithm was made FOV-agnostic with full-circle wraparound
+  handling anyway, since the real target sensor is a genuine 360° scanner. (`docs/phase1-findings.md`)
+- **The SARL checkpoint is imitation-learning-only, not RL-refined** — the available RL-trained
+  alternative failed validation outright (0.21 success vs. a paper-reported 0.99). Chosen
+  deliberately: a bad-but-RL-trained base policy would have made "the supervisor caught something
+  unsafe" indistinguishable from "the supervisor is compensating for a bad policy." (`docs/phase0-findings.md`)
+- **Every number in Results was measured against ground-truth perception, not real sensing.** A
+  real, non-ground-truth alternative (`LidarHumanTrackerSource`) now exists, is wired in, and is
+  live-verified — but the 142-episode matrix has not yet been re-run against it. See
+  [Perception](#perception-two-selectable-human-state-sources) above.
+- **The OOD detector characterizes world-state novelty, not input-pipeline correctness** — none
+  of its five criteria can tell that an observation was already wrong before any threshold looked
+  at it. Three real bugs of exactly that class were found in this project, none of them by tuning
+  a threshold — by differential testing and live adversarial verification.
+- **CI has never run on GitHub infrastructure** — this repository has no configured remote. What
+  *is* verified locally: the full unit-test suite and lint gate run clean (91 tests, 0 failures),
+  and the nightly smoke test's own pass/fail logic was verified against both a real episode and a
+  synthetic failing case. What's unverified is the GitHub-Actions-specific provisioning around it.
+
+## Future Work
+
+Ranked by how directly each follows from a finding already in this report — not a wishlist
+(full detail: `explanation.pdf` §12):
+
+1. **Re-run the 142-episode matrix against `LidarHumanTrackerSource`** — the single most direct
+   next measurement; every current result is ground-truth-only.
+2. **Distinguish static from dynamic LiDAR detections** — directly motivated by the live-observed
+   pillar-misclassification finding; map-differencing against the already-loaded static map is
+   the more principled of two concrete options.
+3. **A real-hardware LiDAR calibration pass** — every clustering/tracking parameter is currently
+   sized against the simulated sensor, not real noise characteristics.
+4. **HEIGHT integration** — a second, genuinely RL-trained, graph-structured policy family;
+   scoped as its own effort pending checkpoint validation, not folded into this backlog.
+5. **Close the detection-margin gap** the collision-rate result surfaced — the OOD proximity
+   threshold and forward-sim lookahead are inherited from the training config, never re-tuned
+   against this robot's real depot dynamics.
+6. **A physical robot.** The entire project is built around one explicit hardware-abstraction
+   seam (an ESP32-based `ros2_control` interface) that has never been built.
+
+## Documentation Map
+
+| Document | What's in it |
+|---|---|
+| **`explanation.pdf`** | Full 53-page interview-grade technical narrative: every design decision, every bug and how it was actually verified, a 34-question Q&A appendix. |
+| **`docs/audit.md`** | The hard adversarial audit that found the coordinate-frame bug and reversed the headline result. |
+| **`docs/phase10-findings.md`** | Full evaluation-matrix detail, including the post-audit CORRECTION section. |
+| **`docs/lidar_perception-findings.md`** | The real, non-ground-truth LiDAR perception pipeline: design, two bugs found and fixed, live verification. |
+| **`docs/lessons.md`** | Transferable engineering lessons from the project, independent of this specific codebase. |
+| **`docs/phase0-findings.md`** … **`phase11-findings.md`** | Per-phase findings logs — every bug found, how it was verified, as it landed. |
+| **`IMPLEMENTATION_PLAN.md`** | The living implementation plan: phase-by-phase design decisions and final status. |
+
+## Acknowledgments
+
+Builds on [`vita-epfl/CrowdNav`](https://github.com/vita-epfl/CrowdNav) (SARL, MIT-licensed) and
+a fork providing a pretrained checkpoint; on [Nav2](https://github.com/ros-navigation/navigation2)
+for planning, costmaps, and the controller plugin interface this entire project is built around;
+and on [ROS 2](https://www.ros.org/) and [Gazebo](https://gazebosim.org/).
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). Upstream dependencies (Nav2, ROS 2, Gazebo) retain their own
+licenses; see `LICENSE` for the exact lineage of the CrowdNav-derived policy code.
