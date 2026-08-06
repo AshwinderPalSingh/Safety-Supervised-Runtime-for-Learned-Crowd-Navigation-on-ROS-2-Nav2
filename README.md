@@ -101,13 +101,7 @@ Full evidence chain, including two harness bugs found and fixed mid-phase and th
 correction above: **`docs/phase10-findings.md`** (evaluation detail), **`docs/audit.md`** (the
 audit itself).
 
-## Demo & Screenshots
 
-The plots above are real, regenerated data. The GUI captures below are not included in this
-repository yet — see [`docs/images/README.md`](docs/images/README.md) for the exact,
-ready-to-drop-in list (filenames, what each should show, and the exact commands to reproduce the
-scenario). Once a file lands at the path shown, uncomment its block below — no further edits
-needed, the syntax is already correct.
 
 <!--
 <p align="center">
